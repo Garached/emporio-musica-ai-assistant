@@ -20,6 +20,14 @@ _NOISE_LINES = [
     re.compile(r"^Última atualização:.*$"),
 ]
 
+# Known errors in the PDF, fixed in the extracted text (data/raw stays untouched).
+CORRECTIONS: dict[str, str] = {
+    # Wrong WhatsApp number in section 7; see docs/data-quality.md, item a.
+    "(67) 3321-4500": "(67) 3341-4444",
+    # Accented (undeliverable) email in table 1.2; see docs/data-quality.md, item b.
+    "contato@empóriodamusica.com.br": "contato@emporiodamusica.com.br",
+}
+
 # Top-level headers start at column 0 ("2. Horário ..."). Sub-sections ("3.1 ...")
 # have no dot after the number, and numbered list items are indented.
 _SECTION_HEADER = re.compile(r"^(\d{1,2})\.\s+(\S.*)$")
@@ -36,7 +44,7 @@ def _clean_line(line: str) -> str:
 
 
 def extract_policy_text(pdf_path: Path = POLICY_PDF) -> str:
-    """Return the cleaned text of the policy PDF (headers/footers removed).
+    """Return the cleaned text of the policy PDF (headers/footers removed, CORRECTIONS applied).
 
     Section headers keep column 0 so they can be detected; other lines are stripped.
     """
@@ -49,8 +57,15 @@ def extract_policy_text(pdf_path: Path = POLICY_PDF) -> str:
                 continue
             is_header = bool(_SECTION_HEADER.match(raw.rstrip()))
             lines.append(raw.rstrip() if is_header else _clean_line(raw))
-    text = "\n".join(lines)
+    text = apply_corrections("\n".join(lines))
     return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
+def apply_corrections(text: str) -> str:
+    """Replace known errors in the policy text (see CORRECTIONS)."""
+    for wrong, right in CORRECTIONS.items():
+        text = text.replace(wrong, right)
+    return text
 
 
 def split_sections(text: str) -> dict[str, str]:

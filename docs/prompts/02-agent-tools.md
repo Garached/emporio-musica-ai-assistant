@@ -114,3 +114,27 @@ Conventional Commit messages. Do NOT push.
 
 When done, summarize: tools created, commits, test results, and any decision
 you had to make that I should know about.
+
+---
+
+## Follow-up fix
+
+Small fix before Phase 3. Fix the policy contact data at the source instead of
+relying on the system prompt: if a tool returns the wrong phone number, the
+LLM gets conflicting information.
+
+In src/emporio/policies.py, add a small, explicit CORRECTIONS mapping applied
+to the extracted text (data/raw stays untouched):
+- "(67) 3321-4500" -> "(67) 3341-4444"
+- "contato@empóriodamusica.com.br" -> "contato@emporiodamusica.com.br"
+Each correction gets a one-line comment pointing to docs/data-quality.md
+(items a and b).
+
+Add a test asserting that no policy section contains the wrong phone number
+or the accented email, and that section 1 contains the correct ones.
+Update docs/data-quality.md to say the corrections are applied in
+policies.py. Run pytest.
+
+Append this prompt to docs/prompts/02-agent-tools.md under a "Follow-up fix"
+heading. One commit: "fix: correct store contact info in policy text".
+Do NOT push.

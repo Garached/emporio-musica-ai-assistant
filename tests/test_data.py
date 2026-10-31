@@ -76,6 +76,17 @@ def test_policy_text_is_cleaned(sections):
     assert "Manual de Políticas e Procedimentos" not in full_text
 
 
+def test_policy_contact_info_is_corrected(sections):
+    for text in sections.values():
+        assert "3321-4500" not in text
+        assert "empóriodamusica" not in text
+    about = next(text for title, text in sections.items() if title.startswith("1."))
+    assert "(67) 3341-4444" in about
+    assert "contato@emporiodamusica.com.br" in about
+    whatsapp = next(text for title, text in sections.items() if "WhatsApp" in title)
+    assert "(67) 3341-4444" in whatsapp
+
+
 def test_policy_section_content(sections):
     hours = next(text for title, text in sections.items() if "Horário" in title)
     assert "09:00 às 18:00" in hours

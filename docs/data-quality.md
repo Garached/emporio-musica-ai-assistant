@@ -123,12 +123,16 @@ Issues found by reading `data/raw/políticas_da_loja.pdf`, with the decision tak
 - **Issue:** (67) 3341-4444 appears on the cover and in the company data table (1.2);
   section 7 (WhatsApp) says (67) 3321-4500.
 - **Decision:** use **(67) 3341-4444**. It appears twice, including the official company data table.
+- **Applied in:** `src/emporio/policies.py` (`CORRECTIONS`) rewrites the wrong number in the
+  extracted policy text, so tools never return it.
 
 ### b) Email with an accent in the company table
 - **Issue:** table 1.2 writes `contato@empóriodamusica.com.br`; the cover writes
   `contato@emporiodamusica.com.br`.
 - **Decision:** use **contato@emporiodamusica.com.br** (cover version). Accented email
   addresses are not reliably deliverable.
+- **Applied in:** `src/emporio/policies.py` (`CORRECTIONS`) rewrites the accented email in the
+  extracted policy text, so tools never return it.
 
 ### c) Conflicting installment rules
 - **Issue:** the payment table says credit card has a minimum installment of R$ 100,00;
