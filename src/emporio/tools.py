@@ -8,7 +8,7 @@ from __future__ import annotations
 import math
 import unicodedata
 from dataclasses import asdict
-from datetime import date
+from datetime import date, datetime, time, timedelta
 from typing import Any
 
 import pandas as pd
@@ -22,8 +22,9 @@ from emporio.business_rules import (
     is_purchasable,
     return_eligibility,
 )
-from emporio.config import current_datetime
+from emporio.config import STORE_TIMEZONE, current_datetime
 from emporio.data import StoreData, load_store_data
+from emporio.policies import load_policy_sections
 
 MAX_LIMIT = 20
 MAX_ALTERNATIVES = 3
@@ -311,3 +312,87 @@ def get_order_status(order_id: int, phone_last4: str, *, today: date | None = No
         "return_eligibility": _eligibility_dict(
             return_eligibility(order["status"], order_date, delivery, today)),
     }
+
+
+# --- policy and store hours tools -------------------------------------------------
+
+def policy_topics() -> list[str]:
+    """All policy section titles, e.g. "4. Política de Trocas e Devoluções"."""
+    return list(load_policy_sections())
+
+
+def get_store_policy(topic: str) -> dict[str, Any]:
+    """Return the text of one policy section.
+
+    Accepts the exact title, or a unique accent/case-insensitive fragment of it.
+    """
+    sections = load_policy_sections()
+    if topic in sections:
+        return {"topic": topic, "text": sections[topic]}
+    wanted = normalize(str(topic))
+    matches = [title for title in sections if wanted and wanted in normalize(title)]
+    if len(matches) == 1:
+        return {"topic": matches[0], "text": sections[matches[0]]}
+    return {"error": f"Unknown policy topic {topic!r}. Valid topics: {list(sections)}"}
+
+
+# Weekday (Mon=0) -> (open, close). None = closed. From policy section 2.
+STORE_HOURS: dict[int, tuple[time, time] | None] = {
+    **{day: (time(9), time(18)) for day in range(5)},
+    5: (time(9), time(13)),
+    6: None,
+}
+WEEKDAYS_PT = ["segunda-feira", "terça-feira", "quarta-feira", "quinta-feira",
+               "sexta-feira", "sábado", "domingo"]
+
+
+def _hours_label(hours: tuple[time, time] | None) -> str:
+    return "fechado" if hours is None else f"{hours[0]:%H:%M}–{hours[1]:%H:%M}"
+
+
+def _next_opening(now: datetime) -> datetime:
+    """First opening time strictly after `now`."""
+    for offset in range(8):
+        day = now.date() + timedelta(days=offset)
+        hours = STORE_HOURS[day.weekday()]
+        if hours is None:
+            continue
+        opening = datetime.combine(day, hours[0], tzinfo=now.tzinfo)
+        if opening > now:
+            return opening
+    raise RuntimeError("Store hours table has no opening day.")  # unreachable
+
+
+def get_store_hours_status(*, now: datetime | None = None) -> dict[str, Any]:
+    """Tell whether the store is open right now, and when it opens next if closed.
+
+    Uses the store timezone America/Campo_Grande (UTC-4, not Brasília time).
+    Hours: Mon–Fri 09:00–18:00, Sat 09:00–13:00, Sun closed.
+    Limitation: holidays are not in the data, so they are NOT considered.
+    `now` defaults to config.current_datetime() (honors EMPORIO_TODAY).
+    """
+    now = now or current_datetime()
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=STORE_TIMEZONE)
+    now = now.astimezone(STORE_TIMEZONE)
+    hours = STORE_HOURS[now.weekday()]
+    is_open = hours is not None and hours[0] <= now.time() < hours[1]
+
+    result: dict[str, Any] = {
+        "now": now.strftime("%Y-%m-%d %H:%M"),
+        "weekday": WEEKDAYS_PT[now.weekday()],
+        "timezone": "America/Campo_Grande (UTC-4)",
+        "is_open": is_open,
+        "today_hours": _hours_label(hours),
+    }
+    if is_open:
+        result["closes_at"] = f"{hours[1]:%H:%M}"
+    else:
+        nxt = _next_opening(now)
+        result["next_opening"] = {
+            "date": nxt.date().isoformat(),
+            "weekday": WEEKDAYS_PT[nxt.weekday()],
+            "time": f"{nxt:%H:%M}",
+        }
+    result["note"] = "Holidays are not considered (the store is closed on holidays)."
+    return result
