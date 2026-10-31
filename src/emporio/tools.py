@@ -7,17 +7,22 @@ from __future__ import annotations
 
 import math
 import unicodedata
+from dataclasses import asdict
+from datetime import date
 from typing import Any
 
 import pandas as pd
 
 from emporio.business_rules import (
     PriceQuote,
+    ReturnEligibility,
     active_promotion,
     availability_label,
     final_price,
     is_purchasable,
+    return_eligibility,
 )
+from emporio.config import current_datetime
 from emporio.data import StoreData, load_store_data
 
 MAX_LIMIT = 20
@@ -208,3 +213,101 @@ def list_active_promotions() -> dict[str, Any]:
         })
     promotions.sort(key=lambda p: p["discount_percent"], reverse=True)
     return {"total": len(promotions), "promotions": promotions}
+
+
+# --- order tool ---------------------------------------------------------------------
+
+# Status labels are our interpretation of the raw status codes (assumption).
+ORDER_STATUS_LABELS = {
+    "pending": "aguardando confirmação do pagamento",
+    "confirmed": "pagamento confirmado, em separação",
+    "shipped": "enviado",
+    "delivered": "entregue",
+    "cancelled": "cancelado",
+}
+
+ORDER_NOT_FOUND = (
+    "Order not found or the phone digits do not match. Ask the customer to double-check "
+    "the order number and the last 4 digits of the phone number registered on the order."
+)
+
+
+def _digits(value: Any) -> str:
+    return "".join(c for c in str(value) if c.isdigit())
+
+
+def _payment_label(method: str) -> str:
+    if method.startswith("credit_"):
+        return f"Cartão de crédito em {method.removeprefix('credit_')}"
+    labels = {"pix": "PIX", "boleto": "Boleto bancário", "debit": "Cartão de débito"}
+    return labels.get(method, method)
+
+
+def _eligibility_dict(elig: ReturnEligibility) -> dict[str, Any]:
+    out = asdict(elig)
+    for key in ("regret_7_days", "defect_exchange_30_days"):
+        if out[key] is not None:
+            out[key]["deadline"] = out[key]["deadline"].isoformat()
+    return out
+
+
+def _normalize_last4(phone_last4: Any) -> str:
+    """Keep digits only; an int loses leading zeros (0123 -> 123), so pad it back."""
+    last4 = _digits(phone_last4)
+    return last4.zfill(4) if isinstance(phone_last4, int) else last4
+
+
+def get_order_status(order_id: int, phone_last4: str, *, today: date | None = None) -> dict[str, Any]:
+    """Look up an order after checking the customer's identity.
+
+    Identity check (LGPD): the last 4 digits of the customer's phone must match.
+    Email is not used because two customers share the same email address.
+    A missing order and wrong digits return the SAME error, so the tool never
+    reveals whether an order exists.
+
+    Status label assumptions: pending = aguardando confirmação do pagamento;
+    confirmed = pagamento confirmado, em separação; shipped = enviado;
+    delivered = entregue; cancelled = cancelado.
+
+    `today` defaults to config.current_datetime() (honors EMPORIO_TODAY).
+    """
+    last4 = _normalize_last4(phone_last4)
+    if len(last4) != 4:
+        return {"error": "phone_last4 must be exactly the last 4 digits of the phone number."}
+
+    store = load_store_data()
+    try:
+        oid = int(order_id)
+    except (TypeError, ValueError):
+        return {"error": ORDER_NOT_FOUND}
+    orders = store.orders[store.orders["order_id"] == oid]
+    if orders.empty:
+        return {"error": ORDER_NOT_FOUND}
+    order = orders.iloc[0]
+    customer = store.customers[store.customers["customer_id"] == order["customer_id"]]
+    if customer.empty or _digits(customer.iloc[0]["phone"])[-4:] != last4:
+        return {"error": ORDER_NOT_FOUND}
+
+    items = store.order_items[store.order_items["order_id"] == oid].merge(
+        store.products[["product_id", "name"]], on="product_id", how="left")
+    today = today or current_datetime().date()
+    order_date = order["order_date"].date()
+    delivery = None if pd.isna(order["estimated_delivery"]) else order["estimated_delivery"].date()
+
+    return {
+        "order_id": oid,
+        "customer_first_name": customer.iloc[0]["name"].split()[0],
+        "status": order["status"],
+        "status_label": ORDER_STATUS_LABELS.get(order["status"], order["status"]),
+        "order_date": order_date.isoformat(),
+        "total_brl": float(order["total_brl"]),
+        "payment_method": _payment_label(order["payment_method"]),
+        "tracking_code": _clean(order["tracking_code"]),
+        "estimated_delivery": delivery.isoformat() if delivery else None,
+        "items": [
+            {"name": _clean(i["name"]), "quantity": int(i["quantity"])} for _, i in items.iterrows()
+        ],
+        "notes": _clean(order["notes"]),
+        "return_eligibility": _eligibility_dict(
+            return_eligibility(order["status"], order_date, delivery, today)),
+    }
