@@ -7,9 +7,10 @@ from __future__ import annotations
 
 import math
 import unicodedata
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import date, datetime, time, timedelta
-from typing import Any
+from functools import lru_cache
+from typing import Any, Callable
 
 import pandas as pd
 
@@ -28,6 +29,9 @@ from emporio.policies import load_policy_sections
 
 MAX_LIMIT = 20
 MAX_ALTERNATIVES = 3
+# Filler words ignored in search queries (every remaining word must match).
+STOPWORDS = {"a", "o", "as", "os", "um", "uma", "de", "da", "do", "das", "dos",
+             "e", "em", "com", "para", "pra", "por"}
 
 
 # --- helpers ----------------------------------------------------------------------
@@ -132,8 +136,8 @@ def search_products(
     products = store.products
     if category is not None:
         products = products[products["category_name"] == category]
-    if query and query.strip():
-        tokens = normalize(query).split()
+    tokens = [t for t in normalize(query or "").split() if t not in STOPWORDS]
+    if tokens:
         products = products[products.apply(
             lambda p: all(t in _haystack(p) for t in tokens), axis=1)]
 
@@ -396,3 +400,178 @@ def get_store_hours_status(*, now: datetime | None = None) -> dict[str, Any]:
         }
     result["note"] = "Holidays are not considered (the store is closed on holidays)."
     return result
+
+
+# --- registry -----------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class Tool:
+    """A tool exposed to the LLM: name, description, JSON Schema parameters, callable."""
+
+    name: str
+    description: str
+    parameters: dict[str, Any]
+    function: Callable[..., dict[str, Any]]
+
+    def spec(self) -> dict[str, Any]:
+        """Provider-agnostic declaration (name, description, JSON Schema)."""
+        return {"name": self.name, "description": self.description, "parameters": self.parameters}
+
+
+def _schema(properties: dict[str, Any], required: list[str] | None = None) -> dict[str, Any]:
+    return {"type": "object", "properties": properties, "required": required or []}
+
+
+@lru_cache(maxsize=1)
+def get_tools() -> dict[str, Tool]:
+    """Build the tool registry. Enums (categories, policy topics) come from the data."""
+    tools = [
+        Tool(
+            name="search_products",
+            description=(
+                "Search the store's musical instrument catalog. Use it whenever the customer "
+                "asks what the store has, wants recommendations, or asks prices of several "
+                "products. Do NOT use it when you already have the product_id (use "
+                "get_product_details) or for accessories (strings, cables, picks, pedals, amps, "
+                "cases): the store does not sell them. Results are sorted by price. `price` is "
+                "what the customer pays (promotional price if a promotion is active); "
+                "`pix_price` is the PIX price. When `original_price` and `discount_percent` are "
+                "present, always show them with the promotional price. `total_found` is the "
+                "number of matches before the `limit` cut. Never invent products or prices "
+                "that are not in the results."
+            ),
+            parameters=_schema({
+                "query": {
+                    "type": "string",
+                    "description": (
+                        "1-3 distinctive keywords: brand, model or feature, e.g. 'takamine gd20', "
+                        "'nylon', 'elétrico', 'yamaha'. Accents and case are ignored. Every word "
+                        "must match, so do not put category or price words here (use the "
+                        "filters). Omit to browse by category/price only."
+                    ),
+                },
+                "category": {
+                    "type": "string",
+                    "enum": category_names(),
+                    "description": "Restrict to one catalog category.",
+                },
+                "min_price": {"type": "number", "description": "Minimum price paid, in BRL."},
+                "max_price": {"type": "number", "description": "Maximum price paid, in BRL."},
+                "only_available": {
+                    "type": "boolean",
+                    "description": (
+                        "Default true: only products that can be bought now. Set false only "
+                        "when the customer asks about a specific product that may be out of "
+                        "stock, discontinued or coming soon."
+                    ),
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": f"Max results to return (1-{MAX_LIMIT}, default 8).",
+                },
+            }),
+            function=search_products,
+        ),
+        Tool(
+            name="get_product_details",
+            description=(
+                "Get full details of ONE product by product_id: description, specs, "
+                "availability, stock and price. Use it after search_products when the customer "
+                "wants to know more about a specific product, or to confirm availability and "
+                "price before answering. If the product cannot be bought (out_of_stock, "
+                "discontinued, coming_soon), the result has up to 3 available `alternatives` "
+                "from the same category: suggest them."
+            ),
+            parameters=_schema(
+                {"product_id": {"type": "integer", "description": "Product ID from search results."}},
+                ["product_id"],
+            ),
+            function=get_product_details,
+        ),
+        Tool(
+            name="list_active_promotions",
+            description=(
+                "List all promotions valid right now, on products that can be bought, with "
+                "original price, discount % and promotional price. Use it when the customer "
+                "asks about promotions, deals, discounts or offers. Any promotion not in this "
+                "list is expired or unavailable: never promise it. Not needed to price a "
+                "single product (search and details already apply promotions)."
+            ),
+            parameters=_schema({}),
+            function=list_active_promotions,
+        ),
+        Tool(
+            name="get_order_status",
+            description=(
+                "Look up an order: status, items, total, payment, tracking code, estimated "
+                "delivery, notes (e.g. cancellation reason) and return/exchange eligibility. "
+                "REQUIRES the order number AND the last 4 digits of the phone number "
+                "registered on the order. If either is missing, ask the customer first; never "
+                "guess or reuse digits. On error, do not say or imply whether the order exists: "
+                "ask the customer to check both pieces of data. Greet the customer by "
+                "`customer_first_name`. `return_eligibility` says whether the 7-day regret "
+                "window and the 30-day defect exchange window are still open."
+            ),
+            parameters=_schema({
+                "order_id": {"type": "integer", "description": "Order number given by the customer."},
+                "phone_last4": {
+                    "type": "string",
+                    "description": "Last 4 digits of the customer's registered phone, e.g. '3456'.",
+                },
+            }, ["order_id", "phone_last4"]),
+            function=get_order_status,
+        ),
+        Tool(
+            name="get_store_policy",
+            description=(
+                "Get the official text of one section of the store's policy manual. Use it for "
+                "questions about payment methods and installments, returns and exchanges, "
+                "shipping and delivery, promotion rules, warranty, privacy (LGPD) or general "
+                "store information. Base the answer only on the returned text. Do NOT use it "
+                "to know if the store is open right now (use get_store_hours_status)."
+            ),
+            parameters=_schema(
+                {"topic": {"type": "string", "enum": policy_topics(),
+                           "description": "Policy section to read."}},
+                ["topic"],
+            ),
+            function=get_store_policy,
+        ),
+        Tool(
+            name="get_store_hours_status",
+            description=(
+                "Check whether the store (and human WhatsApp service) is open right now, in "
+                "Campo Grande time (UTC-4), today's hours and, if closed, the next opening day "
+                "and time. Also returns the current date and time. Use it when the customer "
+                "asks if the store is open, until when, or when someone will answer. Holidays "
+                "are not considered: mention this if relevant."
+            ),
+            parameters=_schema({}),
+            function=get_store_hours_status,
+        ),
+    ]
+    return {tool.name: tool for tool in tools}
+
+
+def tool_specs() -> list[dict[str, Any]]:
+    """Declarations of all tools, ready to adapt to any LLM provider."""
+    return [tool.spec() for tool in get_tools().values()]
+
+
+def run_tool(name: str, args: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Validate and run a tool call. Never raises: problems come back as {"error": ...}."""
+    tool = get_tools().get(name)
+    if tool is None:
+        return {"error": f"Unknown tool {name!r}. Available: {list(get_tools())}"}
+    args = dict(args or {})
+    allowed = set(tool.parameters["properties"])
+    unexpected = sorted(set(args) - allowed)
+    if unexpected:
+        return {"error": f"Unexpected arguments for {name}: {unexpected}. Allowed: {sorted(allowed)}"}
+    missing = [p for p in tool.parameters["required"] if args.get(p) in (None, "")]
+    if missing:
+        return {"error": f"Missing required arguments for {name}: {missing}"}
+    try:
+        return tool.function(**args)
+    except Exception as exc:  # a bad tool call must never crash the conversation
+        return {"error": f"Tool {name} failed: {type(exc).__name__}: {exc}"}
