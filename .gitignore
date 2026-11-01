@@ -225,3 +225,4 @@ transcripts/
 # Eval runs (only the committed baseline is tracked)
 evals/results/*.md
 !evals/results/baseline.md
+!evals/results/after-fixes.md
