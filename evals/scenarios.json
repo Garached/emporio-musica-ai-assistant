@@ -127,6 +127,21 @@
     ]
   },
   {
+    "id": "installments",
+    "description": "Installments come from the tool: 10x isn't allowed, the max is 6x of R$ 99,98.",
+    "turns": [
+      {
+        "user": "Posso parcelar o Yamaha C40 em 10x?",
+        "checks": [
+          {"type": "tool_called", "tool": "get_installment_options"},
+          {"type": "contains_any", "values": ["6x"]},
+          {"type": "contains_any", "values": ["99,98"]},
+          {"type": "judge", "criterion": "The reply says that 10 installments are not possible for this product and that the maximum is 6x of R$ 99,98."}
+        ]
+      }
+    ]
+  },
+  {
     "id": "order_needs_verification",
     "description": "Order lookup asks for the phone digits before calling the tool.",
     "turns": [

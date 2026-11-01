@@ -107,8 +107,8 @@ def test_make_judge_uses_llm():
 
 def test_real_scenarios_file_is_valid():
     scenarios = load_scenarios()
-    assert len(scenarios) == 22
-    assert len({s["id"] for s in scenarios}) == 22
+    assert len(scenarios) == 23
+    assert len({s["id"] for s in scenarios}) == 23
     for s in scenarios:
         for turn in s["turns"]:
             for spec in turn["checks"]:
