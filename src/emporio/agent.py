@@ -114,8 +114,9 @@ class Agent:
             try:
                 # Rebuilt every call: date, time and open/closed status can change.
                 response = self.llm.generate(self._build_prompt(), self.history, self.tools)
-            except Exception:
-                logger.exception("LLM call failed")
+            except Exception as exc:
+                # Traceback only at DEBUG level, so the chat UI stays clean.
+                logger.error("LLM call failed: %s", exc, exc_info=logger.isEnabledFor(logging.DEBUG))
                 self._drop_turn(user_msg)
                 return AgentReply(LLM_ERROR_MESSAGE, trace)
 
