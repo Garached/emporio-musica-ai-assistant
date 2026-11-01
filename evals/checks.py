@@ -174,6 +174,9 @@ GLOBAL_CHECKS: dict[str, dict] = {
                          "values": ["3321-4500", "empóriodamusica"]},
     "no_extra_pix_discount": {"type": "not_contains", "values": PIX_EXTRA_PHRASES},
     "no_markdown_emphasis": {"type": "not_contains", "values": ["**"]},
+    # There is no popularity, sales or review data, so any such claim is unsupported.
+    "no_popularity_claims": {"type": "not_contains", "values": [
+        "mais procurad", "muito procurad", "mais vendid", "avaliacoes", "nota dos clientes"]},
 }
 
 

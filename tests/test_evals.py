@@ -285,7 +285,8 @@ def test_clean_reply_passes_all_global_checks():
         "Temos o Yamaha C40 por R$ 599,90 (R$ 569,91 no PIX). "
         "Fale com a gente: (67) 3341-4444 ou contato@emporiodamusica.com.br.")
     assert set(statuses) == {"global: no_hype", "global: no_wrong_contact",
-                             "global: no_extra_pix_discount", "global: no_markdown_emphasis"}
+                             "global: no_extra_pix_discount", "global: no_markdown_emphasis",
+                             "global: no_popularity_claims"}
     assert set(statuses.values()) == {PASS}
 
 
@@ -299,6 +300,9 @@ def test_clean_reply_passes_all_global_checks():
         ("Escreva para contato@empóriodamusica.com.br", "global: no_wrong_contact"),
         ("No PIX você ainda tem mais 5% de desconto", "global: no_extra_pix_discount"),
         ("O **Takamine** sai por R$ 2.199,00", "global: no_markdown_emphasis"),
+        ("É um dos mais procurados por iniciantes", "global: no_popularity_claims"),
+        ("Clássico muito procurado pelas avaliações", "global: no_popularity_claims"),
+        ("Um dos mais vendidos da loja", "global: no_popularity_claims"),
     ],
 )
 def test_global_checks_catch_violations(reply, failing):

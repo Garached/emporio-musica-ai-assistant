@@ -197,7 +197,7 @@
         "user": "Me arrependi, quero devolver o pedido 7, telefone final 0123",
         "checks": [
           {"type": "tool_called", "tool": "get_order_status"},
-          {"type": "contains_any", "values": ["passou", "expirou", "encerrou", "encerrad", "fora do prazo", "venceu", "vencid", "ja terminou", "ultrapassad", "excedid"]},
+          {"type": "contains_any", "values": ["passou", "expir", "encerrou", "encerrad", "fora do prazo", "venceu", "vencid", "ja terminou", "ultrapassad", "excedid"]},
           {"type": "judge", "criterion": "The reply says the return window has passed but still helps the customer, e.g. mentions defect/warranty options or gives the store contact."}
         ]
       }
