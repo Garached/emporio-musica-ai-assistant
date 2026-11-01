@@ -15,6 +15,7 @@ from emporio.tools import (
     get_store_hours_status,
     get_store_policy,
     list_active_promotions,
+    price_gap_note,
     run_tool,
     search_products,
     tool_specs,
@@ -91,6 +92,19 @@ def test_details_of_unavailable_product_include_purchasable_alternatives():
     for alt in alternatives:
         assert alt["category"] == "Violões"
         assert is_purchasable(products.loc[alt["product_id"]])
+
+
+def test_discontinued_details_flag_big_price_gap():
+    details = get_product_details(136)  # R$ 441, alternatives from R$ 7.157 to R$ 11.445
+    note = details["alternatives_price_note"]
+    assert "much more expensive" in note
+    assert "R$ 441,00" in note and "R$ 7.157,00" in note and "R$ 11.445,00" in note
+
+
+def test_no_price_gap_note_when_alternatives_are_close():
+    assert "alternatives_price_note" not in get_product_details(96)  # R$ 799,90, close alternatives
+    assert price_gap_note(1000, [1100, 1400]) is None
+    assert "much cheaper" in price_gap_note(1000, [300, 500])
 
 
 def test_details_not_found_returns_error():

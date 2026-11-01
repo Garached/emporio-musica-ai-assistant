@@ -214,7 +214,33 @@ def get_product_details(product_id: int) -> dict[str, Any]:
         details["stock_quantity"] = int(product["stock_quantity"])
     else:
         details["alternatives"] = _alternatives(product, store)
+        note = price_gap_note(details["price"], [a["price"] for a in details["alternatives"]])
+        if note:
+            details["alternatives_price_note"] = note
     return details
+
+
+PRICE_GAP_RATIO = 1.5  # alternatives this many times pricier (or cheaper) count as a big gap
+
+
+def format_brl(value: float) -> str:
+    """1967.18 -> "R$ 1.967,18"."""
+    return "R$ " + f"{value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def price_gap_note(price: float, alternative_prices: list[float]) -> str | None:
+    """Explain, as data, when every alternative is in a very different price range."""
+    if not alternative_prices or price <= 0:
+        return None
+    low, high = min(alternative_prices), max(alternative_prices)
+    if low >= price * PRICE_GAP_RATIO:
+        relation = "much more expensive"
+    elif high <= price / PRICE_GAP_RATIO:
+        relation = "much cheaper"
+    else:
+        return None
+    return (f"All alternatives are {relation} than this product ({format_brl(price)}): "
+            f"from {format_brl(low)} to {format_brl(high)}. Tell the customer this transparently.")
 
 
 def list_active_promotions() -> dict[str, Any]:
