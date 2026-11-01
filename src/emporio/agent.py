@@ -13,6 +13,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
+from emporio.guards import VerificationGuard
 from emporio.llm.base import LLMClient, Message, ToolCall, ToolResult
 from emporio.prompts import build_system_prompt
 from emporio.tools import run_tool, tool_specs
@@ -99,7 +100,9 @@ class Agent:
         self.max_iterations = max_iterations
         self.max_history = max_history
         self.tools = tools if tools is not None else tool_specs()
-        self._run_tool = tool_runner
+        # One guard per conversation: order lookups lock after repeated failed verifications.
+        self.verification_guard = VerificationGuard(tool_runner)
+        self._run_tool = self.verification_guard
         self._build_prompt = prompt_builder
         self.history: list[Message] = []
 
