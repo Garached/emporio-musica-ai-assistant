@@ -37,12 +37,11 @@ COMMANDS = {
 AgentFactory = Callable[[], Agent]
 
 
-def make_console() -> Console:
-    """Console with UTF-8 output, so accents and emojis work on Windows."""
+def force_utf8_output() -> None:
+    """Make accents and emojis print correctly on Windows consoles."""
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8")
-    return Console()
 
 
 class ChatSession:
@@ -202,8 +201,9 @@ def main(
     read_input: Callable[[], str] | None = None,
 ) -> int:
     """CLI entry point. `runtime`, `console` and `read_input` are injectable for tests."""
+    force_utf8_output()  # before argparse, so --help prints accents correctly
     args = parse_args(argv)
-    console = console or make_console()
+    console = console or Console()
     setup_logging(console)
     try:
         if args.today:
