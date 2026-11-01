@@ -95,6 +95,16 @@ def test_active_promotions_are_exactly_the_active_purchasable_ones():
         assert promo["original_price"] > promo["promotional_price"]
 
 
+def test_promotional_items_say_pix_does_not_stack():
+    for promo in list_active_promotions()["promotions"]:
+        assert promo["pix_price"] == promo["promotional_price"]
+        assert promo["pix_extra_discount"] is False
+    details = get_product_details(121)  # 20% promotion
+    assert details["pix_price"] == details["price"] == 439.2
+    assert details["pix_extra_discount"] is False
+    assert "pix_extra_discount" not in get_product_details(81)  # no promotion
+
+
 # --- orders -----------------------------------------------------------------------
 
 def test_order_lookup_with_correct_digits():

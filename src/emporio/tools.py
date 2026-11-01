@@ -78,6 +78,9 @@ def _price_info(quote: PriceQuote, promo: dict | None) -> dict[str, Any]:
             promotion_name=_clean(promo["description"]) if promo else None,
         )
     info["pix_price"] = quote.pix_price
+    if quote.has_promotion:
+        # Policy 6.2: PIX does not stack on promotions. Given as data so the model can't miss it.
+        info["pix_extra_discount"] = False
     return info
 
 
@@ -215,6 +218,8 @@ def list_active_promotions() -> dict[str, Any]:
             "original_price": quote.original_price,
             "discount_percent": quote.discount_percent,
             "promotional_price": quote.promotional_price,
+            "pix_price": quote.pix_price,  # same as the promotional price (policy 6.2)
+            "pix_extra_discount": False,
         })
     promotions.sort(key=lambda p: p["discount_percent"], reverse=True)
     return {"total": len(promotions), "promotions": promotions}
@@ -494,8 +499,10 @@ def get_tools() -> dict[str, Tool]:
                 "List all promotions valid right now, on products that can be bought, with "
                 "original price, discount % and promotional price. Use it when the customer "
                 "asks about promotions, deals, discounts or offers. Any promotion not in this "
-                "list is expired or unavailable: never promise it. Not needed to price a "
-                "single product (search and details already apply promotions)."
+                "list is expired or unavailable: never promise it. PIX gives NO extra "
+                "discount on promotional items (`pix_extra_discount: false`; `pix_price` equals "
+                "the promotional price). Not needed to price a single product (search and "
+                "details already apply promotions)."
             ),
             parameters=_schema({}),
             function=list_active_promotions,
