@@ -322,3 +322,9 @@ def test_global_checks_run_on_every_turn_including_turns_without_checks():
     assert [c.label for c in first_turn.checks if c.status == FAIL] == ["global: no_hype"]
     assert results[1].status == FAIL
     assert all(any(c.label.startswith("global:") for c in t.checks) for r in results for t in r.turns)
+
+
+def test_no_scenario_relies_on_allow_not_called():
+    for s in load_scenarios():
+        for turn in s["turns"]:
+            assert all("allow_not_called" not in c for c in turn["checks"])
