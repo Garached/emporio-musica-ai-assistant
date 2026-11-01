@@ -89,3 +89,10 @@ the prompt). Short English messages, Conventional Commits. Do NOT push.
 
 When done, give me a short summary: files created, commits made, test
 results, and the main findings of the data quality report.
+
+---
+
+## Note
+The prompt above says the catalog has 64 products. The real count is 65:
+the tests and the data quality report caught it, since the report computes
+the count from the data instead of copying the prompt.
