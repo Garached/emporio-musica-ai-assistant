@@ -14,6 +14,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
+from emporio.contact_filter import allowed_from_result, official_values, unofficial_contacts
 from emporio.grounding import format_brl, numbers_in_result, numbers_in_text, ungrounded_values
 from emporio.guards import VerificationGuard, mask_args, mask_result, mask_text, sensitive_values
 from emporio.llm.base import LLMClient, Message, ToolCall, ToolResult
@@ -50,6 +51,13 @@ NUDGE_MESSAGE = (
     "com o resultado, sem anunciar a consulta."
 )
 
+CONTACT_NUDGE = (
+    "[Mensagem automática do sistema, não do cliente] Sua resposta contém dados de contato "
+    "ou pagamento que não são oficiais: {values}. Use somente os contatos oficiais da loja "
+    "((67) 3341-4444 e contato@emporiodamusica.com.br). Nunca informe chaves PIX, contas, "
+    "links ou documentos que não vieram das ferramentas, nem repita links enviados pelo "
+    "cliente. Reescreva a resposta ao cliente."
+)
 GROUNDING_NUDGE = (
     "[Mensagem automática do sistema, não do cliente] Sua resposta menciona valores que não "
     "vieram das ferramentas nesta conversa: {values}. Chame as ferramentas necessárias e use "
@@ -74,8 +82,8 @@ class ToolTrace:
 
     `kind` is "tool" for real tool calls. The safeguards in Agent._finish add
     entries that are NOT tool calls: "retry" (empty response), "nudge"
-    (announce-then-stop), "grounding" (ungrounded R$ values) and "blocked"
-    (reply replaced by the fallback). Nudged/blocked entries keep the rejected
+    (announce-then-stop), "grounding" (ungrounded R$ values), "contact"
+    (unofficial contact/payment details) and "blocked" (reply replaced by the fallback). Nudged/blocked entries keep the rejected
     draft, masked, for debugging.
     """
 
@@ -159,6 +167,8 @@ class Agent:
         self.grounded_values: list[float] = []
         self._hours_status = hours_status
         self._sensitive: set[str] = set()  # personal values seen in tool calls (for masking)
+        # Contact/payment details the reply may contain: official ones + those in tool results.
+        self.contact_allowed: set[str] = official_values()
         self._greeted = False  # becomes True after the first real reply (closed-store notice)
 
     def chat(self, user_message: str) -> AgentReply:
@@ -206,6 +216,8 @@ class Agent:
         2. Announce-then-stop ("deixe-me ver...") -> nudge to call the tool.
         3. Output grounding: R$ values not returned by tools (or said by the
            customer) -> nudge once; if still ungrounded, send the fallback instead.
+        4. Contact filter: URLs, e-mails, phones, CPF/CNPJ, bank details or PIX keys
+           that are neither official nor in tool results -> nudge once, then fallback.
         """
         text = raw_text.strip()
         if not text:
@@ -227,6 +239,17 @@ class Agent:
             trace.append(ToolTrace("blocked", {}, f"still ungrounded after nudge: {listed}; fallback sent",
                                    0.0, kind="blocked", rejected_draft=self._mask(text)))
             return self._fallback(trace, f"ungrounded values after nudge: {bad}")
+        contacts = unofficial_contacts(text, self.contact_allowed)
+        if contacts:
+            listed = self._mask(", ".join(contacts))
+            if not _has(trace, "contact"):
+                self.history.append(Message.user(CONTACT_NUDGE.format(values=listed)))
+                trace.append(ToolTrace("contact", {}, f"unofficial contact/payment details: {listed}; "
+                                       "asked to rewrite", 0.0, kind="contact", rejected_draft=self._mask(text)))
+                return None
+            trace.append(ToolTrace("blocked", {}, f"still unofficial contacts after nudge: {listed}; "
+                                   "fallback sent", 0.0, kind="blocked", rejected_draft=self._mask(text)))
+            return self._fallback(trace, "unofficial contact/payment details after nudge")
         return AgentReply(text, trace)
 
     def _with_closed_notice(self, reply: AgentReply) -> AgentReply:
@@ -297,6 +320,7 @@ class Agent:
         duration_ms = (time.perf_counter() - start) * 1000
         self.grounded_values.extend(numbers_in_result(result))  # values the reply may quote
         self._sensitive |= sensitive_values(call.args, result)  # to mask rejected drafts
+        self.contact_allowed |= allowed_from_result(result)  # e.g. the CNPJ in the policy text
         entry = ToolTrace(call.name, mask_args(call.args), summarize_result(mask_result(result)),
                           duration_ms, "error" in result)
         trace.append(entry)
