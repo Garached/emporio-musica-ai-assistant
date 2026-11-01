@@ -221,3 +221,7 @@ __marimo__/
 
 # Chat transcripts (best ones are copied to a separate examples folder)
 transcripts/
+
+# Eval runs (only the committed baseline is tracked)
+evals/results/*.md
+!evals/results/baseline.md
