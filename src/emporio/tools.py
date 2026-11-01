@@ -661,6 +661,8 @@ def run_tool(name: str, args: dict[str, Any] | None = None) -> dict[str, Any]:
     tool = get_tools().get(name)
     if tool is None:
         return {"error": f"Unknown tool {name!r}. Available: {list(get_tools())}"}
+    if args is not None and not isinstance(args, dict):
+        return {"error": f"Arguments for {name} must be an object, got {type(args).__name__}."}
     args = dict(args or {})
     allowed = set(tool.parameters["properties"])
     unexpected = sorted(set(args) - allowed)
