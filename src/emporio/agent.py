@@ -16,8 +16,9 @@ from typing import Any, Callable
 from emporio.grounding import format_brl, numbers_in_result, numbers_in_text, ungrounded_values
 from emporio.guards import VerificationGuard, mask_args, mask_result
 from emporio.llm.base import LLMClient, Message, ToolCall, ToolResult
+from emporio.notices import closed_notice, mentions_reopening
 from emporio.prompts import build_system_prompt
-from emporio.tools import normalize, run_tool, tool_specs
+from emporio.tools import get_store_hours_status, normalize, run_tool, tool_specs
 
 logger = logging.getLogger(__name__)
 
@@ -130,6 +131,7 @@ class Agent:
         tools: list[dict[str, Any]] | None = None,
         tool_runner: Callable[[str, dict[str, Any]], dict[str, Any]] = run_tool,
         prompt_builder: Callable[[], str] = build_system_prompt,
+        hours_status: Callable[[], dict[str, Any]] = get_store_hours_status,
     ) -> None:
         self.llm = llm
         self.max_iterations = max_iterations
@@ -143,6 +145,8 @@ class Agent:
         # Numbers the reply may quote as R$: everything tools returned in this conversation,
         # plus what the customer wrote (so Clave can repeat a budget like "até R$ 1.000").
         self.grounded_values: list[float] = []
+        self._hours_status = hours_status
+        self._greeted = False  # becomes True after the first real reply (closed-store notice)
 
     def chat(self, user_message: str) -> AgentReply:
         """Answer one user message, running tools as the LLM requests them."""
@@ -171,7 +175,7 @@ class Agent:
                 reply = self._finish(response.text or "", trace)
                 if reply is None:
                     continue  # a retry or nudge was sent; counts toward max_iterations
-                return reply
+                return self._with_closed_notice(reply)
 
             results = [self._execute(call, trace) for call in response.tool_calls]
             self.history.append(Message.tool(results))
@@ -208,6 +212,19 @@ class Agent:
                 return None
             return self._fallback(trace, f"ungrounded values after nudge: {bad}")
         return AgentReply(text, trace)
+
+    def _with_closed_notice(self, reply: AgentReply) -> AgentReply:
+        """Policy 7.1, enforced in code: on the first real reply of the conversation, if the
+        store is closed and the reply doesn't say when it reopens, append the standard line."""
+        if self._greeted or reply.text in (FALLBACK_MESSAGE, LLM_ERROR_MESSAGE):
+            return reply
+        self._greeted = True
+        status = self._hours_status()
+        notice = closed_notice(status)
+        if notice is None or mentions_reopening(reply.text, status):
+            return reply
+        logger.debug("closed-store notice appended to the first reply")
+        return AgentReply(f"{reply.text}\n\n{notice}", reply.trace)
 
     def _fallback(self, trace: list[ToolTrace], reason: str) -> AgentReply:
         """Replace the model's last reply with the friendly fallback (never sent to the customer)."""
