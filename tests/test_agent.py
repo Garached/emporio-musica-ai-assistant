@@ -112,9 +112,13 @@ def test_llm_failure_returns_friendly_error_and_cleans_history():
     assert [m.role for m in agent.history] == ["user", "assistant"]  # failed turn removed
 
 
-def test_empty_model_response_returns_fallback():
-    reply = make_agent(FakeLLM(LLMResponse(text=None))).chat("Oi")
+def test_empty_model_response_twice_returns_fallback():
+    llm = FakeLLM(LLMResponse(text=None), LLMResponse(text=None))
+    agent = make_agent(llm)
+    reply = agent.chat("Oi")
     assert reply.text == FALLBACK_MESSAGE
+    assert [t.kind for t in reply.trace] == ["retry"]
+    assert agent.history[-1].text == FALLBACK_MESSAGE  # no empty message left in history
 
 
 def test_system_prompt_is_rebuilt_every_call():

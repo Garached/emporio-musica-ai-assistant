@@ -70,8 +70,8 @@ def format_turn(user_message: str, reply: AgentReply) -> str:
     if reply.trace:
         lines.append("Ferramentas usadas:")
         for t in reply.trace:
-            if t.kind == "nudge":
-                lines.append(f"- _nudge_: {t.summary}")
+            if t.kind != "tool":  # safeguard entries: retry / nudge / grounding
+                lines.append(f"- _{t.kind}_: {t.summary}")
                 continue
             args = json.dumps(t.args, ensure_ascii=False)
             lines.append(f"- `{t.name}` `{args}` → {t.summary} ({t.duration_ms:.0f} ms)")

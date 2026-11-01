@@ -13,6 +13,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
+from emporio.grounding import format_brl, numbers_in_result, numbers_in_text, ungrounded_values
 from emporio.guards import VerificationGuard, mask_args, mask_result
 from emporio.llm.base import LLMClient, Message, ToolCall, ToolResult
 from emporio.prompts import build_system_prompt
@@ -39,6 +40,13 @@ NUDGE_MESSAGE = (
     "com o resultado, sem anunciar a consulta."
 )
 
+GROUNDING_NUDGE = (
+    "[Mensagem automática do sistema, não do cliente] Sua resposta menciona valores que não "
+    "vieram das ferramentas nesta conversa: {values}. Chame as ferramentas necessárias e use "
+    "somente os valores que elas retornarem, sem calcular valores por conta própria. "
+    "Depois responda ao cliente."
+)
+
 MAX_INPUT_CHARS = 2000
 TOO_LONG_MESSAGE = (
     "Opa, sua mensagem ficou bem longa 😅 Consegue resumir em até 2.000 caracteres? "
@@ -54,8 +62,9 @@ FALLBACK_MESSAGE = (
 class ToolTrace:
     """What happened in one tool call (for debugging and the CLI debug mode).
 
-    `kind` is "tool" for real tool calls and "nudge" for the announce-then-stop
-    safeguard (see Agent._should_nudge); nudges are not tool calls.
+    `kind` is "tool" for real tool calls. The safeguards in Agent._finish add
+    entries that are NOT tool calls: "retry" (empty response), "nudge"
+    (announce-then-stop) and "grounding" (ungrounded R$ values).
     """
 
     name: str
@@ -72,6 +81,10 @@ class AgentReply:
 
     text: str
     trace: list[ToolTrace] = field(default_factory=list)
+
+
+def _has(trace: list[ToolTrace], kind: str) -> bool:
+    return any(t.kind == kind for t in trace)
 
 
 def summarize_result(result: dict[str, Any], max_len: int = 160) -> str:
@@ -127,6 +140,9 @@ class Agent:
         self._run_tool = self.verification_guard
         self._build_prompt = prompt_builder
         self.history: list[Message] = []
+        # Numbers the reply may quote as R$: everything tools returned in this conversation,
+        # plus what the customer wrote (so Clave can repeat a budget like "até R$ 1.000").
+        self.grounded_values: list[float] = []
 
     def chat(self, user_message: str) -> AgentReply:
         """Answer one user message, running tools as the LLM requests them."""
@@ -136,6 +152,7 @@ class Agent:
             return AgentReply(TOO_LONG_MESSAGE)
         user_msg = Message.user(user_message)
         self.history.append(user_msg)
+        self.grounded_values.extend(numbers_in_text(user_message))
         trace: list[ToolTrace] = []
 
         for _ in range(self.max_iterations):
@@ -151,11 +168,10 @@ class Agent:
 
             self.history.append(Message.assistant(response))
             if not response.tool_calls:
-                text = (response.text or "").strip()
-                if self._should_nudge(text, trace):
-                    self._nudge(trace)
-                    continue  # counts toward max_iterations
-                return AgentReply(text or FALLBACK_MESSAGE, trace)
+                reply = self._finish(response.text or "", trace)
+                if reply is None:
+                    continue  # a retry or nudge was sent; counts toward max_iterations
+                return reply
 
             results = [self._execute(call, trace) for call in response.tool_calls]
             self.history.append(Message.tool(results))
@@ -163,6 +179,49 @@ class Agent:
         logger.warning("Max iterations (%d) reached", self.max_iterations)
         self.history.append(Message.assistant_text(FALLBACK_MESSAGE))
         return AgentReply(FALLBACK_MESSAGE, trace)
+
+    def _finish(self, raw_text: str, trace: list[ToolTrace]) -> AgentReply | None:
+        """Decide what to do with a plain-text model reply.
+
+        Returns the reply to send, or None after sending the model a retry/nudge.
+        Safeguards, each at most once per turn:
+        1. Empty response -> retry the LLM call once.
+        2. Announce-then-stop ("deixe-me ver...") -> nudge to call the tool.
+        3. Output grounding: R$ values not returned by tools (or said by the
+           customer) -> nudge once; if still ungrounded, send the fallback instead.
+        """
+        text = raw_text.strip()
+        if not text:
+            if not _has(trace, "retry"):
+                self.history.pop()  # drop the empty model message before retrying
+                trace.append(ToolTrace("retry", {}, "empty model response; retried once", 0.0, kind="retry"))
+                logger.warning("Empty model response; retrying once")
+                return None
+            return self._fallback(trace, "empty model response after retry")
+        if self._should_nudge(text, trace):
+            self._nudge(trace)
+            return None
+        bad = ungrounded_values(text, self.grounded_values)
+        if bad:
+            if not _has(trace, "grounding"):
+                self._grounding_nudge(bad, trace)
+                return None
+            return self._fallback(trace, f"ungrounded values after nudge: {bad}")
+        return AgentReply(text, trace)
+
+    def _fallback(self, trace: list[ToolTrace], reason: str) -> AgentReply:
+        """Replace the model's last reply with the friendly fallback (never sent to the customer)."""
+        logger.warning("Reply blocked (%s); sending fallback", reason)
+        self.history[-1] = Message.assistant_text(FALLBACK_MESSAGE)
+        return AgentReply(FALLBACK_MESSAGE, trace)
+
+    def _grounding_nudge(self, values: list[float], trace: list[ToolTrace]) -> None:
+        """Tell the model which values aren't backed by tool results; ask it to use tools."""
+        listed = ", ".join(format_brl(v) for v in values)
+        self.history.append(Message.user(GROUNDING_NUDGE.format(values=listed)))
+        trace.append(ToolTrace("grounding", {}, f"values not returned by tools: {listed}; asked to use tools",
+                               0.0, kind="grounding"))
+        logger.debug("grounding nudge: %s", listed)
 
     def _should_nudge(self, text: str, trace: list[ToolTrace]) -> bool:
         """Announce-then-stop safeguard (heuristic).
@@ -200,6 +259,7 @@ class Agent:
         start = time.perf_counter()
         result = self._run_tool(call.name, call.args)
         duration_ms = (time.perf_counter() - start) * 1000
+        self.grounded_values.extend(numbers_in_result(result))  # values the reply may quote
         entry = ToolTrace(call.name, mask_args(call.args), summarize_result(mask_result(result)),
                           duration_ms, "error" in result)
         trace.append(entry)
