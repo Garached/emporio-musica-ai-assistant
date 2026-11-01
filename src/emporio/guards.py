@@ -68,3 +68,17 @@ def mask_args(args: dict[str, Any]) -> dict[str, Any]:
 def mask_result(result: dict[str, Any]) -> dict[str, Any]:
     """Copy of a tool result with personal fields hidden, for summaries and logs."""
     return {k: (MASK if k in SENSITIVE_RESULT_KEYS and v else v) for k, v in result.items()}
+
+
+def sensitive_values(args: dict[str, Any], result: dict[str, Any]) -> set[str]:
+    """Personal values from one tool call (real args and result) that must be masked in free text."""
+    found = {str(args[k]) for k in SENSITIVE_ARGS if args.get(k)}
+    found |= {str(result[k]) for k in SENSITIVE_RESULT_KEYS if result.get(k)}
+    return {v for v in found if len(v) >= 2}
+
+
+def mask_text(text: str, secrets: set[str]) -> str:
+    """Replace every known personal value in a free text (e.g. a rejected draft) with the mask."""
+    for secret in sorted(secrets, key=len, reverse=True):
+        text = text.replace(secret, MASK)
+    return text

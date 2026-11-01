@@ -139,6 +139,9 @@ class ChatSession:
         for t in reply.trace:
             if t.kind != "tool":  # safeguard entries: retry / nudge / grounding
                 self.console.print(Text(f"  ↻ {t.kind}: {t.summary}"), style="dim yellow")
+                if t.rejected_draft:
+                    draft = " ".join(t.rejected_draft.split())
+                    self.console.print(Text(f"    rejected draft: «{draft[:200]}»"), style="dim yellow")
                 continue
             self.console.print(
                 Text(f"  ⚙ {t.name}({format_args(t.args)}) → {t.summary} ({t.duration_ms:.0f} ms)"),

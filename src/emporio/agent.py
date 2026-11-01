@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from emporio.grounding import format_brl, numbers_in_result, numbers_in_text, ungrounded_values
-from emporio.guards import VerificationGuard, mask_args, mask_result
+from emporio.guards import VerificationGuard, mask_args, mask_result, mask_text, sensitive_values
 from emporio.llm.base import LLMClient, Message, ToolCall, ToolResult
 from emporio.notices import closed_notice, mentions_reopening
 from emporio.prompts import build_system_prompt
@@ -65,7 +65,9 @@ class ToolTrace:
 
     `kind` is "tool" for real tool calls. The safeguards in Agent._finish add
     entries that are NOT tool calls: "retry" (empty response), "nudge"
-    (announce-then-stop) and "grounding" (ungrounded R$ values).
+    (announce-then-stop), "grounding" (ungrounded R$ values) and "blocked"
+    (reply replaced by the fallback). Nudged/blocked entries keep the rejected
+    draft, masked, for debugging.
     """
 
     name: str
@@ -74,6 +76,7 @@ class ToolTrace:
     duration_ms: float
     error: bool = False
     kind: str = "tool"
+    rejected_draft: str | None = None  # masked text of a model reply we did not send
 
 
 @dataclass(frozen=True)
@@ -146,6 +149,7 @@ class Agent:
         # plus what the customer wrote (so Clave can repeat a budget like "até R$ 1.000").
         self.grounded_values: list[float] = []
         self._hours_status = hours_status
+        self._sensitive: set[str] = set()  # personal values seen in tool calls (for masking)
         self._greeted = False  # becomes True after the first real reply (closed-store notice)
 
     def chat(self, user_message: str) -> AgentReply:
@@ -203,13 +207,16 @@ class Agent:
                 return None
             return self._fallback(trace, "empty model response after retry")
         if self._should_nudge(text, trace):
-            self._nudge(trace)
+            self._nudge(trace, text)
             return None
         bad = ungrounded_values(text, self.grounded_values)
         if bad:
             if not _has(trace, "grounding"):
-                self._grounding_nudge(bad, trace)
+                self._grounding_nudge(bad, trace, text)
                 return None
+            listed = ", ".join(format_brl(v) for v in bad)
+            trace.append(ToolTrace("blocked", {}, f"still ungrounded after nudge: {listed}; fallback sent",
+                                   0.0, kind="blocked", rejected_draft=self._mask(text)))
             return self._fallback(trace, f"ungrounded values after nudge: {bad}")
         return AgentReply(text, trace)
 
@@ -232,12 +239,12 @@ class Agent:
         self.history[-1] = Message.assistant_text(FALLBACK_MESSAGE)
         return AgentReply(FALLBACK_MESSAGE, trace)
 
-    def _grounding_nudge(self, values: list[float], trace: list[ToolTrace]) -> None:
+    def _grounding_nudge(self, values: list[float], trace: list[ToolTrace], draft: str) -> None:
         """Tell the model which values aren't backed by tool results; ask it to use tools."""
         listed = ", ".join(format_brl(v) for v in values)
         self.history.append(Message.user(GROUNDING_NUDGE.format(values=listed)))
         trace.append(ToolTrace("grounding", {}, f"values not returned by tools: {listed}; asked to use tools",
-                               0.0, kind="grounding"))
+                               0.0, kind="grounding", rejected_draft=self._mask(draft)))
         logger.debug("grounding nudge: %s", listed)
 
     def _should_nudge(self, text: str, trace: list[ToolTrace]) -> bool:
@@ -253,12 +260,16 @@ class Agent:
         normalized = normalize(text)
         return any(phrase in normalized for phrase in ANNOUNCE_PHRASES)
 
-    def _nudge(self, trace: list[ToolTrace]) -> None:
+    def _nudge(self, trace: list[ToolTrace], draft: str) -> None:
         """Ask the model once to actually call the tool; the customer never sees this."""
         self.history.append(Message.user(NUDGE_MESSAGE))
         trace.append(ToolTrace("nudge", {}, "announced a check without calling a tool; asked to call it now",
-                               0.0, kind="nudge"))
+                               0.0, kind="nudge", rejected_draft=self._mask(draft)))
         logger.debug("nudge: model announced a check without calling a tool")
+
+    def _mask(self, text: str) -> str:
+        """Hide personal data seen in this conversation (phone digits, name, tracking code)."""
+        return mask_text(text, self._sensitive)
 
     def _drop_turn(self, user_msg: Message) -> None:
         """Remove an unfinished turn so the next message starts from a clean history."""
@@ -277,6 +288,7 @@ class Agent:
         result = self._run_tool(call.name, call.args)
         duration_ms = (time.perf_counter() - start) * 1000
         self.grounded_values.extend(numbers_in_result(result))  # values the reply may quote
+        self._sensitive |= sensitive_values(call.args, result)  # to mask rejected drafts
         entry = ToolTrace(call.name, mask_args(call.args), summarize_result(mask_result(result)),
                           duration_ms, "error" in result)
         trace.append(entry)

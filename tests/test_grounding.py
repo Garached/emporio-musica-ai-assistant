@@ -2,7 +2,9 @@
 
 from emporio.agent import FALLBACK_MESSAGE, Agent
 from emporio.grounding import numbers_in_result, numbers_in_text, prices_in, ungrounded_values
+from emporio.guards import MASK
 from emporio.llm.base import LLMResponse, ToolCall
+from emporio.transcript import format_turn
 
 
 class FakeLLM:
@@ -101,3 +103,34 @@ def test_empty_response_is_retried_once():
     assert [t.kind for t in reply.trace] == ["retry"]
     assert len(llm.calls) == 2
     assert all(m.text for m in agent.history if m.role == "assistant")  # empty message dropped
+
+
+# --- rejected drafts are kept (masked) for debugging -------------------------------------
+
+def test_grounding_nudge_keeps_rejected_draft():
+    agent, _ = make_agent(INVENTED, SEARCH_GD20, GROUNDED)
+    reply = agent.chat("Quais violões vocês têm?")
+    nudge = reply.trace[0]
+    assert nudge.kind == "grounding" and nudge.rejected_draft == INVENTED.text
+    assert reply.trace[1].rejected_draft is None  # real tool calls have no draft
+
+
+def test_blocked_reply_is_recorded_with_its_draft():
+    agent, _ = make_agent(INVENTED, LLMResponse(text="Então fica R$ 777,00."))
+    reply = agent.chat("Quais violões vocês têm?")
+    assert [t.kind for t in reply.trace] == ["grounding", "blocked"]
+    assert reply.trace[1].rejected_draft == "Então fica R$ 777,00."
+
+
+def test_rejected_drafts_are_masked():
+    lookup = LLMResponse(tool_calls=[ToolCall("o1", "get_order_status", {"order_id": 5, "phone_last4": "4321"})])
+    leaky = LLMResponse(text="Oi Rafael (final 4321)! Rastreio BRTP3456789BR, total R$ 999,00.")
+    ok = LLMResponse(text="Oi! Seu pedido foi entregue. Total: R$ 4.599,00.")
+    agent, _ = make_agent(lookup, leaky, ok)
+    reply = agent.chat("Pedido 5, final 4321")
+    draft = next(t for t in reply.trace if t.kind == "grounding").rejected_draft
+    for secret in ("Rafael", "4321", "BRTP3456789BR"):
+        assert secret not in draft
+    assert draft.count(MASK) == 3 and "R$ 999,00" in draft
+    assert "rejected draft: «" in format_turn("Pedido 5", reply)
+    assert "Rafael" not in format_turn("Pedido 5", reply)
