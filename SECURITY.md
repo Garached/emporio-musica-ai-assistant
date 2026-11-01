@@ -109,7 +109,7 @@ A prompt can be talked around; code can't.
   escaping there.
 
 ### LLM06 Excessive Agency
-- **Here:** the agent can only call six read-only tools. It can't create orders, issue
+- **Here:** the agent can only call seven read-only tools. It can't create orders, issue
   refunds, change data or send messages.
 - **Mitigations:**
   - Read-only tools, a tool allow-list with schemas ([tools.py](src/emporio/tools.py)
@@ -136,6 +136,9 @@ A prompt can be talked around; code can't.
 - **Mitigations:**
   - All money math is in code (`Decimal`, half-up rounding). The rule that PIX doesn't
     stack on promotions is sent as data (`pix_extra_discount: false`).
+  - Installments are computed in code too: `get_installment_options` applies the tiered
+    minimums of policy 3.1, and the prompt forbids calculating installments
+    ([business_rules.py](src/emporio/business_rules.py) `installment_options`).
   - Search reports `unavailable_matches`, and a price-gap note is generated in code.
   - The prompt forbids stating facts without calling a tool.
   - The open/closed status and return windows are computed in code.

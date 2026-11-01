@@ -140,6 +140,10 @@ Issues found by reading `data/raw/políticas_da_loja.pdf`, with the decision tak
   4x–6x with a minimum of R$ 80,00, 7x–12x with a minimum of R$ 100,00.
 - **Decision:** apply the more specific **tiered rules of 3.1**. For edge cases the agent
   suggests confirming with the store.
+- **Assumption:** "até 3x sem valor mínimo, exceto abaixo de R$ 50,00" is read as a minimum
+  installment of R$ 50,00 for 2x–3x. A single payment (1x) has no minimum.
+- **Applied in:** `src/emporio/business_rules.py` (`installment_options`), exposed by the
+  `get_installment_options` tool, so installment values are computed in code, never by the model.
 
 ### d) Catalog described in the manual vs. actual data
 - **Issue:** the manual claims 300+ instruments, including wind and orchestral instruments.
