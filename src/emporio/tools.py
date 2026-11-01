@@ -536,8 +536,9 @@ def get_tools() -> dict[str, Tool]:
                 "registered on the order. If either is missing, ask the customer first; never "
                 "guess or reuse digits. On error, do not say or imply whether the order exists: "
                 "ask the customer to check both pieces of data. Greet the customer by "
-                "`customer_first_name`. `return_eligibility` says whether the 7-day regret "
-                "window and the 30-day defect exchange window are still open."
+                "`customer_first_name`. `estimated_delivery` is a forecast: call it 'previsão "
+                "de entrega', never the actual delivery date. `return_eligibility` says whether "
+                "the 7-day regret window and the 30-day defect exchange window are still open."
             ),
             parameters=_schema({
                 "order_id": {"type": "integer", "description": "Order number given by the customer."},
@@ -569,9 +570,9 @@ def get_tools() -> dict[str, Tool]:
             description=(
                 "Check whether the store (and human WhatsApp service) is open right now, in "
                 "Campo Grande time (UTC-4), today's hours and, if closed, the next opening day "
-                "and time. Also returns the current date and time. Use it when the customer "
-                "asks if the store is open, until when, or when someone will answer. Holidays "
-                "are not considered: mention this if relevant."
+                "and time. The current open/closed status is already in the system prompt, so "
+                "call this ONLY when the customer explicitly asks about hours (is it open, until "
+                "when, when does it open). Holidays are not considered: mention this if relevant."
             ),
             parameters=_schema({}),
             function=get_store_hours_status,
