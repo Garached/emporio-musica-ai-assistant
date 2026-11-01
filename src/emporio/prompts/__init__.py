@@ -6,9 +6,19 @@ from datetime import datetime
 from importlib.resources import files
 
 from emporio.config import STORE_TIMEZONE, current_datetime
-from emporio.tools import WEEKDAYS_PT
+from emporio.tools import WEEKDAYS_PT, get_store_hours_status
 
 SYSTEM_PROMPT_FILE = "system_prompt.md"
+
+
+def store_status_text(now: datetime) -> str:
+    """Describe in Portuguese whether the store is open now, reusing the hours tool."""
+    status = get_store_hours_status(now=now)
+    if status["is_open"]:
+        return f"aberta agora (hoje até as {status['closes_at']})"
+    nxt = status["next_opening"]
+    day = datetime.fromisoformat(nxt["date"]).strftime("%d/%m")
+    return f"fechada agora; a equipe volta {nxt['weekday']}, {day}, às {nxt['time']}"
 
 
 def load_prompt_template(name: str = SYSTEM_PROMPT_FILE) -> str:
@@ -17,7 +27,7 @@ def load_prompt_template(name: str = SYSTEM_PROMPT_FILE) -> str:
 
 
 def build_system_prompt(now: datetime | None = None) -> str:
-    """Render the system prompt with the current date, weekday and time.
+    """Render the system prompt with the current date, weekday, time and store status.
 
     Placeholders use {{name}} with plain replacement: str.format would break on
     literal braces and string.Template on "R$".
@@ -28,6 +38,7 @@ def build_system_prompt(now: datetime | None = None) -> str:
         "{{date}}": now.strftime("%d/%m/%Y"),
         "{{weekday}}": WEEKDAYS_PT[now.weekday()],
         "{{time}}": now.strftime("%H:%M"),
+        "{{store_status}}": store_status_text(now),
     }
     prompt = load_prompt_template()
     for placeholder, value in values.items():

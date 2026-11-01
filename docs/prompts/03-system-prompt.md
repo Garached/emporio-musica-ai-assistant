@@ -122,3 +122,31 @@ saved prompt). Short English Conventional Commit messages. Do NOT push.
 
 When done, summarize: files, commits, tests, and show me the final system
 prompt so I can review it.
+
+---
+
+## Follow-up improvements
+
+Small improvements to the system prompt (src/emporio/prompts/system_prompt.md):
+
+1. Greeting: in the first reply of a conversation, Clave introduces herself
+   as the store's virtual assistant (proactive transparency, not only when
+   asked).
+
+2. Out-of-hours notice (policy 7.1: outside business hours the virtual
+   assistant must say when the team is back). In build_system_prompt, reuse
+   the store-hours logic from tools.py to fill a new placeholder with the
+   current status: open (until when) or closed (reopens when). Add a rule:
+   if the store is closed, mention briefly in the greeting that the human
+   team is back at that time, while Clave keeps helping now.
+
+3. Option lists: show at most 3-5 options at a time, then offer to show
+   more or to narrow down (e.g. nylon vs. steel, a price range).
+
+Update tests/test_prompts.py: with an injected datetime on a Sunday the
+prompt says the store is closed and reopens Monday 09:00; on a weekday at
+10:00 it says it's open. Run pytest.
+
+Append this prompt to docs/prompts/03-system-prompt.md under a "Follow-up
+improvements" heading. One commit: "feat: improve greeting, hours notice
+and option lists in prompt". Do NOT push.
