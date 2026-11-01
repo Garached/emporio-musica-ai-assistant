@@ -10,7 +10,11 @@ from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
-DEFAULT_MODEL = "gemini-2.5-flash"
+DEFAULT_MODEL = "gemini-3.8-flash"
+
+# Low thinking: faster and cheaper, enough for customer service.
+DEFAULT_THINKING_LEVEL = "low"
+THINKING_LEVELS = ("minimal", "low", "medium", "high")
 
 # Campo Grande (MS) is UTC-4 with no daylight saving time. NOT Brasília time.
 STORE_TIMEZONE = ZoneInfo("America/Campo_Grande")
@@ -26,13 +30,14 @@ class Settings:
 
     gemini_api_key: str
     gemini_model: str = DEFAULT_MODEL
+    gemini_thinking_level: str = DEFAULT_THINKING_LEVEL
 
 
 def load_settings() -> Settings:
     """Load settings from the environment, reading a `.env` file if present.
 
     Raises:
-        ConfigError: If GEMINI_API_KEY is not set.
+        ConfigError: If GEMINI_API_KEY is not set or GEMINI_THINKING_LEVEL is invalid.
     """
     load_dotenv()
 
@@ -47,7 +52,12 @@ def load_settings() -> Settings:
         )
 
     model = os.getenv("GEMINI_MODEL", "").strip() or DEFAULT_MODEL
-    return Settings(gemini_api_key=api_key, gemini_model=model)
+    level = os.getenv("GEMINI_THINKING_LEVEL", "").strip().lower() or DEFAULT_THINKING_LEVEL
+    if level not in THINKING_LEVELS:
+        raise ConfigError(
+            f"Invalid GEMINI_THINKING_LEVEL={level!r}. Use one of: {', '.join(THINKING_LEVELS)}."
+        )
+    return Settings(gemini_api_key=api_key, gemini_model=model, gemini_thinking_level=level)
 
 
 @lru_cache(maxsize=1)
