@@ -58,6 +58,20 @@ def test_search_category_and_max_price():
     assert prices == sorted(prices)
 
 
+def test_search_lists_unavailable_matches_without_price():
+    result = search_products("ibanez bass 2x")
+    assert result["total_found"] == 0
+    assert result["unavailable_matches"] == [{
+        "product_id": 136, "name": "Ibanez Bass 2X Electric Bass",
+        "category": "Baixos", "availability": "discontinued",
+    }]
+
+
+def test_unavailable_matches_only_for_text_queries():
+    assert "unavailable_matches" not in search_products(category="Violões", limit=20)
+    assert "unavailable_matches" not in search_products("ibanez bass 2x", only_available=False)
+
+
 def test_search_unknown_category_returns_error():
     assert "error" in search_products(category="Pianos")
 

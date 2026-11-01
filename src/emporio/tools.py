@@ -29,6 +29,7 @@ from emporio.policies import load_policy_sections
 
 MAX_LIMIT = 20
 MAX_ALTERNATIVES = 3
+MAX_UNAVAILABLE = 5
 # Filler words ignored in search queries (every remaining word must match).
 STOPWORDS = {"a", "o", "as", "os", "um", "uma", "de", "da", "do", "das", "dos",
              "e", "em", "com", "para", "pra", "por"}
@@ -130,7 +131,8 @@ def search_products(
 
     Every word of `query` must appear (accent/case-insensitive) in the name,
     description, category or specs. Price filters use the price actually paid
-    (promotional price when a promotion is active).
+    (promotional price when a promotion is active). With only_available and a text
+    query, matching products that can't be bought are listed in `unavailable_matches`.
     """
     store = load_store_data()
     if category is not None and category not in category_names(store):
@@ -145,14 +147,17 @@ def search_products(
             lambda p: all(t in _haystack(p) for t in tokens), axis=1)]
 
     matches: list[tuple[float, dict]] = []
+    unavailable: list[dict[str, Any]] = []
     for _, product in products.iterrows():
-        if only_available and not is_purchasable(product):
-            continue
         quote, _promo = _quote(product, store)
         price = _effective_price(quote)
         if min_price is not None and price < float(min_price):
             continue
         if max_price is not None and price > float(max_price):
+            continue
+        if only_available and not is_purchasable(product):
+            if tokens:  # a text query names something specific: say it exists but can't be bought
+                unavailable.append(_unavailable_entry(product))
             continue
         matches.append((price, _summary(product, store)))
 
@@ -162,9 +167,21 @@ def search_products(
         "total_found": len(matches),
         "results": [m[1] for m in matches[:limit]],
     }
+    if unavailable:
+        result["unavailable_matches"] = unavailable[:MAX_UNAVAILABLE]
     if category is not None and store.products[store.products["category_name"] == category].empty:
         result["note"] = f"The current catalog has no products in category {category!r}."
     return result
+
+
+def _unavailable_entry(product: pd.Series) -> dict[str, Any]:
+    """Matching product that can't be bought now: no price, just what it is and why."""
+    return {
+        "product_id": int(product["product_id"]),
+        "name": product["name"],
+        "category": product["category_name"],
+        "availability": availability_label(product),
+    }
 
 
 def _alternatives(product: pd.Series, store: StoreData) -> list[dict[str, Any]]:
@@ -442,7 +459,10 @@ def get_tools() -> dict[str, Tool]:
                 "what the customer pays (promotional price if a promotion is active); "
                 "`pix_price` is the PIX price. When `original_price` and `discount_percent` are "
                 "present, always show them with the promotional price. `total_found` is the "
-                "number of matches before the `limit` cut. Never invent products or prices "
+                "number of matches before the `limit` cut. `unavailable_matches` lists products "
+                "that match the query but cannot be bought (discontinued, out_of_stock, "
+                "coming_soon): never say they don't exist; explain their status and call "
+                "get_product_details for alternatives. Never invent products or prices "
                 "that are not in the results."
             ),
             parameters=_schema({
