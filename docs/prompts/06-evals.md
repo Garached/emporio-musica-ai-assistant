@@ -104,3 +104,79 @@ messages. Do NOT push.
 
 When done, show me the baseline summary table and list every failing check
 with the reply that failed, so I can decide the fixes.
+
+---
+
+## Follow-up fixes
+
+Context: Phase 6 follow-up. I reviewed evals/results/baseline.md. Besides the
+3 failing checks, reading the conversations revealed a CRITICAL bug the
+checks missed. Fix these, preferring code over prompt for anything that must
+be exact. Don't overfit to the eval wording: fix the general behavior.
+
+1. CRITICAL: in the promotions scenario Clave said "no PIX você ainda tem
+   mais 5% de desconto", which is false (policy 6.2: PIX doesn't stack on
+   promotional prices).
+   - list_active_promotions (and any tool output with an active promotion):
+     include pix_price (equal to the promotional price) and an explicit field
+     like "pix_extra_discount": false, so the model gets the rule as data.
+   - System prompt: on promotional items, never mention an extra PIX
+     discount.
+   - Eval: add to the promotions scenario a not_contains check for phrases
+     like "mais 5%", "5% a mais", "adicional de 5", "desconto extra no pix",
+     plus a judge criterion: no extra PIX discount is promised on
+     promotional items.
+
+2. IMPORTANT: discontinued products look like they don't exist. search_products
+   hides non-purchasable products by default, so "Ibanez Bass 2X" (product
+   136, discontinued, R$ 441) returned nothing, Clave said it's not in the
+   catalog, and offered a R$ 11.445 bass as an alternative without
+   mentioning the price gap.
+   - search_products: when only_available is true and the query also matches
+     non-purchasable products, return them in a separate
+     "unavailable_matches" list (product_id, name, availability label, no
+     price), so the agent can explain the situation.
+   - System prompt: when unavailable_matches appear, explain the status
+     (discontinued / out of stock / coming soon) and use get_product_details
+     to get alternatives. If the alternatives are in a very different price
+     range, say so transparently.
+   - Unit test: searching "ibanez bass 2x" returns product 136 in
+     unavailable_matches.
+   - Eval: add a judge criterion to the discontinued scenario: explains the
+     product was discontinued and, if it suggests alternatives, is
+     transparent about a big price difference.
+
+3. Minor fixes:
+   a) The open/closed status is already in the system prompt context: don't
+      call get_store_hours_status for it. Only call it when the customer
+      asks about hours explicitly. Mention that the store is closed only in
+      the greeting or when handing off to a human, not in every reply.
+      Eval: in the accessory scenario, replace tool_not_called "*" with
+      tool_not_called for the catalog/order tools only (the intent was "no
+      catalog lookup needed").
+   b) No unsupported praise: describe products with facts from the
+      description and specs; don't add subjective claims like "incrível" or
+      "o melhor" that aren't in the data.
+   c) Markdown: the CLI shows asterisks literally. Strip markdown emphasis
+      (**bold**, *italic*, headings) from replies before displaying them in
+      the CLI and transcripts (code fix), and keep the prompt rule "plain
+      text". Unit test for the stripping function.
+   d) Dates: estimated_delivery is a forecast. Clave must say "previsão de
+      entrega" and never state it as the actual delivery date.
+
+4. Run pytest (all must pass). Then run the evals with --judge only for the
+   scenarios touched (promotions, discontinued, accessory, no_hype,
+   return_inside_window), check they pass, then run the FULL suite once with
+   --judge to catch regressions. Save the full run as
+   evals/results/after-fixes.md. Keep baseline.md unchanged.
+
+5. Append this prompt to docs/prompts/06-evals.md under a "Follow-up fixes"
+   heading.
+
+Git rules: small logical commits (promotions/PIX fix, unavailable matches,
+prompt fixes, markdown stripping, eval updates, results, prompt).
+Short English Conventional Commit messages. Do NOT push.
+
+When done, show me a before/after comparison: baseline vs after-fixes
+(score and the scenarios that changed), and paste the new promotions and
+discontinued replies.
