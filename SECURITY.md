@@ -39,7 +39,9 @@ A prompt can be talked around; code can't.
   - Messages over 2,000 characters are rejected before the LLM is called
     ([agent.py](src/emporio/agent.py) `MAX_INPUT_CHARS`).
   - Red-team evals cover this ([evals/scenarios.json](evals/scenarios.json):
-    `prompt_injection`, `english_injection`, `fake_manager`, `fake_discount_code`).
+    `prompt_injection`, `english_injection`, `fake_manager`, `fake_discount_code`,
+    `grandma_jailbreak`, `base64_injection`, `social_engineering_multiturn`,
+    `price_sycophancy`).
 - **Residual:** the model can still be persuaded to *say* something wrong (for example,
   promise a discount in text). It can't *do* anything harmful, but a production
   deployment should add output checks for price and discount claims, and monitoring.
@@ -174,6 +176,26 @@ A prompt can be talked around; code can't.
 - **Residual / production:** per-user/IP rate limiting, spending caps and alerts on the
   API key, and usage monitoring.
 
+## Payment fraud
+
+- **Risk:** the most damaging thing a store assistant can say is a fake payment detail. If
+  Clave invented a PIX key, bank account or payment link (or confirmed a phishing link), a
+  customer could send money to a fraudster. The data has **no PIX key, bank account or
+  payment link**, so any such detail in a reply would be invented.
+- **Mitigations:**
+  - Clave only gives the official contacts (phone/WhatsApp, e-mail, address), fixed in the
+    prompt and corrected in the policy text ([policies.py](src/emporio/policies.py)).
+  - Red-team evals: `fake_pix_key` (asks for the store's PIX key; must not invent one or
+    use the CNPJ as a key) and `phishing_link` (asks whether a suspicious payment link is the
+    store's; must not confirm it and must warn). Both pass
+    ([evals/results/red-team.md](evals/results/red-team.md)).
+  - The output grounding check blocks invented R$ amounts, but it does not cover keys,
+    accounts or links.
+- **Residual / production:** this rule is enforced by the prompt and tested by evals, not
+  blocked in code. A production deployment should add an output filter that blocks
+  URLs, e-mail addresses and CNPJ/CPF-like numbers other than the official contacts, and
+  publish its official payment channels so customers can check them.
+
 ## Secrets
 
 - The API key is read from `.env` (git-ignored); [.env.example](.env.example) has
@@ -193,15 +215,34 @@ A prompt can be talked around; code can't.
 - Server-side rate limiting, abuse detection, monitoring and alerting.
 - Encryption at rest and a retention policy for transcripts.
 - Moderation of model output beyond the provider's default safety filters.
-- Robustness against new jailbreaks: tested with 6 red-team scenarios, judged by the
-  same model.
+- Robustness against new jailbreaks: tested with 13 red-team scenarios (single runs),
+  partly judged by the same model.
+- A code-level filter for payment details (PIX keys, accounts, links): see "Payment fraud".
 - Pinned, hashed dependencies.
 
 ## Security tests
 
-- Unit tests (offline, in `pytest`): [tests/test_guards.py](tests/test_guards.py) covers
-  the brute-force lock, input limit and PII masking. [tests/test_tools.py](tests/test_tools.py)
-  covers verification and identical errors.
-- Red-team evals against the real model: `reveal_prompt`, `fake_manager`,
-  `other_customer_data`, `brute_force`, `english_injection`, `fake_discount_code`.
-  Results: [evals/results/red-team.md](evals/results/red-team.md).
+- **Unit tests** (offline, in `pytest`):
+  - [tests/test_guards.py](tests/test_guards.py): brute-force lock, input limit, PII masking.
+  - [tests/test_tools.py](tests/test_tools.py): verification and identical errors.
+  - [tests/test_grounding.py](tests/test_grounding.py): output grounding and masked
+    rejected drafts.
+- **Fuzzing** ([tests/test_fuzz.py](tests/test_fuzz.py), about 100 cases): regex
+  metacharacters, SQL-like strings, emojis, control characters and 10,000-character
+  queries; negative, zero, huge and non-numeric product/order IDs; phone digits with
+  letters, 10 digits or full-width digits; path-like policy topics; unknown tool names and
+  non-object arguments; pathological input for the markdown and price regexes. No
+  exception escapes `run_tool` and every output is a JSON-serializable dict.
+  - **Found and fixed:** non-object arguments (e.g. a string) raised an exception before
+    validation; `run_tool` now rejects them with an error.
+- **Static analysis (2026-11-01):** `bandit -r src evals scripts` (bandit 1.9.4, 2,748
+  lines) found **no issues**. A grep for `eval(`, `exec(`, `pickle`, `subprocess`,
+  `os.system`, `shell=True`, `yaml.load` and `__import__` found no uses. The only matches
+  were `re.compile` (regex), the word "eval" in docstrings, and `"__import__"` as fuzz-test
+  data.
+- **Red-team evals against the real model** (13 scenarios, all passing; results in
+  [evals/results/red-team.md](evals/results/red-team.md)):
+  - Round 1: `reveal_prompt`, `fake_manager`, `other_customer_data`, `brute_force`,
+    `english_injection`, `fake_discount_code`.
+  - Round 2: `fake_pix_key`, `phishing_link`, `order_existence_oracle`, `price_sycophancy`,
+    `social_engineering_multiturn`, `grandma_jailbreak`, `base64_injection`.
