@@ -20,6 +20,7 @@ from emporio.business_rules import (
     active_promotion,
     availability_label,
     final_price,
+    installment_options,
     is_purchasable,
     return_eligibility,
 )
@@ -266,6 +267,36 @@ def list_active_promotions() -> dict[str, Any]:
         })
     promotions.sort(key=lambda p: p["discount_percent"], reverse=True)
     return {"total": len(promotions), "promotions": promotions}
+
+
+def get_installment_options(product_id: int) -> dict[str, Any]:
+    """Interest-free credit card options (1x-12x) for a product, computed in code.
+
+    Uses the price the customer pays (promotional price when active) and the tiered
+    minimums of policy 3.1 (business_rules.installment_options).
+    """
+    store = load_store_data()
+    product = _find_product(product_id, store)
+    if product is None:
+        return {"error": f"Product {product_id} not found."}
+    base = {"product_id": int(product["product_id"]), "name": product["name"],
+            "availability": availability_label(product)}
+    if not is_purchasable(product):
+        return {**base, "note": "This product cannot be bought now, so there are no installment options."}
+
+    quote, _promo = _quote(product, store)
+    plan = installment_options(_effective_price(quote))
+    return {
+        **base,
+        "price": plan.amount,
+        "has_promotion": quote.has_promotion,
+        "max_installments": plan.max_installments,
+        "max_installment_value": plan.options[plan.max_installments - 1].value,
+        "options": [{"installments": o.installments, "value": o.value, "allowed": o.allowed}
+                    for o in plan.options],
+        "rule": "Interest-free credit card. Minimum installment: 2x-3x R$ 50,00; "
+                "4x-6x R$ 80,00; 7x-12x R$ 100,00 (policy 3.1).",
+    }
 
 
 # --- order tool ---------------------------------------------------------------------
@@ -552,6 +583,23 @@ def get_tools() -> dict[str, Tool]:
             ),
             parameters=_schema({}),
             function=list_active_promotions,
+        ),
+        Tool(
+            name="get_installment_options",
+            description=(
+                "Interest-free credit card installment options (1x to 12x) for ONE product, "
+                "computed by the system with the tiered minimums of policy 3.1, on the price the "
+                "customer pays (promotional price if active). Use it whenever the customer asks "
+                "about paying in installments ('parcelar', 'em quantas vezes', '10x'). Never "
+                "calculate installments yourself: report `value`, `allowed` and "
+                "`max_installments` exactly as returned. If you don't know the product yet, find "
+                "it with search_products first."
+            ),
+            parameters=_schema(
+                {"product_id": {"type": "integer", "description": "Product ID from search results."}},
+                ["product_id"],
+            ),
+            function=get_installment_options,
         ),
         Tool(
             name="get_order_status",

@@ -10,6 +10,7 @@ from emporio.config import STORE_TIMEZONE, current_datetime
 from emporio.data import load_store_data
 from emporio.tools import (
     ORDER_NOT_FOUND,
+    get_installment_options,
     get_order_status,
     get_product_details,
     get_store_hours_status,
@@ -238,7 +239,7 @@ def test_run_tool_catches_exceptions():
 
 def test_specs_are_valid_and_json_serializable():
     specs = tool_specs()
-    assert len(specs) == 6
+    assert len(specs) == 7
     for spec in specs:
         assert spec["description"] and spec["parameters"]["type"] == "object"
     json.dumps(specs)
@@ -259,3 +260,30 @@ def test_every_tool_output_is_json_serializable(name, args):
     result = run_tool(name, args)
     assert "error" not in result
     json.dumps(result)
+
+
+# --- installments --------------------------------------------------------------------
+
+def test_installment_tool_for_yamaha_c40():
+    result = get_installment_options(81)  # R$ 599,90
+    assert result["max_installments"] == 6 and result["max_installment_value"] == 99.98
+    by_n = {o["installments"]: o for o in result["options"]}
+    assert by_n[6] == {"installments": 6, "value": 99.98, "allowed": True}
+    assert by_n[7]["allowed"] is False and by_n[10]["allowed"] is False
+
+
+def test_installment_tool_uses_promotional_price():
+    result = get_installment_options(121)  # R$ 549,00 with 20% off -> R$ 439,20
+    assert result["price"] == 439.2 and result["has_promotion"] is True
+    assert result["max_installments"] == 5  # 439,20/5 = 87,84 >= 80; 6x = 73,20 < 80
+
+
+def test_installment_tool_unavailable_and_missing_products():
+    assert "options" not in get_installment_options(136)  # discontinued
+    assert get_installment_options(136)["availability"] == "discontinued"
+    assert "error" in get_installment_options(9999)
+
+
+def test_installment_tool_is_registered():
+    assert "get_installment_options" in [s["name"] for s in tool_specs()]
+    assert "error" not in run_tool("get_installment_options", {"product_id": 92})
