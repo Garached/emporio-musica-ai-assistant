@@ -9,6 +9,7 @@ from pathlib import Path
 from emporio.agent import AgentReply
 from emporio.config import STORE_TIMEZONE
 from emporio.data import PROJECT_ROOT
+from emporio.formatting import strip_markdown
 
 TRANSCRIPTS_DIR = PROJECT_ROOT / "transcripts"
 
@@ -65,7 +66,7 @@ class Transcript:
 def format_turn(user_message: str, reply: AgentReply) -> str:
     """Markdown for one turn; tool calls listed compactly below the reply."""
     lines = [f"**Cliente:** {_hard_breaks(user_message)}", "",
-             f"**Clave:** {_hard_breaks(reply.text)}", ""]
+             f"**Clave:** {_hard_breaks(strip_markdown(reply.text))}", ""]
     if reply.trace:
         lines.append("Ferramentas usadas:")
         for t in reply.trace:

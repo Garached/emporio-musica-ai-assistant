@@ -23,6 +23,7 @@ from emporio.config import (
     load_settings,
     parse_today,
 )
+from emporio.formatting import strip_markdown
 from emporio.transcript import TRANSCRIPTS_DIR, Transcript
 
 PROMPT = "[bold cyan]Você:[/] "
@@ -126,7 +127,7 @@ class ChatSession:
 
     def print_reply(self, reply: AgentReply) -> None:
         """Clave's name in color, then the reply as plain text (no markdown)."""
-        self.console.print(Text("Clave: ", style="bold magenta") + Text(reply.text))
+        self.console.print(Text("Clave: ", style="bold magenta") + Text(strip_markdown(reply.text)))
         if self.debug:
             self.print_trace(reply)
         self.console.print()
