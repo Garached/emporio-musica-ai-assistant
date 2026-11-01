@@ -13,7 +13,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from emporio.guards import VerificationGuard
+from emporio.guards import VerificationGuard, mask_args, mask_result
 from emporio.llm.base import LLMClient, Message, ToolCall, ToolResult
 from emporio.prompts import build_system_prompt
 from emporio.tools import run_tool, tool_specs
@@ -152,11 +152,16 @@ class Agent:
                 return
 
     def _execute(self, call: ToolCall, trace: list[ToolTrace]) -> ToolResult:
-        """Run one tool call, record it in the trace and log it."""
+        """Run one tool call, record it in the trace and log it.
+
+        The tool gets the real args; the trace and logs get masked copies (LGPD),
+        since they end up in debug output, transcripts and eval reports.
+        """
         start = time.perf_counter()
         result = self._run_tool(call.name, call.args)
         duration_ms = (time.perf_counter() - start) * 1000
-        entry = ToolTrace(call.name, call.args, summarize_result(result), duration_ms, "error" in result)
+        entry = ToolTrace(call.name, mask_args(call.args), summarize_result(mask_result(result)),
+                          duration_ms, "error" in result)
         trace.append(entry)
-        logger.debug("tool %s args=%s -> %s (%.0f ms)", call.name, call.args, entry.summary, duration_ms)
+        logger.debug("tool %s args=%s -> %s (%.0f ms)", entry.name, entry.args, entry.summary, duration_ms)
         return ToolResult(call_id=call.id, name=call.name, content=result)

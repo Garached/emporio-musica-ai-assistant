@@ -2,6 +2,8 @@
 
 - VerificationGuard: locks order lookups after repeated failed phone checks,
   so the 10,000 possible 4-digit combinations can't be brute-forced.
+- mask_args / mask_result: hide personal data (LGPD) in what we display or store
+  (debug trace, transcripts, logs, eval reports). Tools still get the real values.
 """
 
 from __future__ import annotations
@@ -49,3 +51,20 @@ class VerificationGuard:
                 return {"error": f"{ORDER_NOT_FOUND} {LOCKED_ERROR}", "locked": True}
             return {**result, "attempts_left": self.max_failures - self.failures}
         return result
+
+
+# --- PII masking ---------------------------------------------------------------------
+
+MASK = "••••"
+SENSITIVE_ARGS = frozenset({"phone_last4"})
+SENSITIVE_RESULT_KEYS = frozenset({"customer_first_name", "tracking_code"})
+
+
+def mask_args(args: dict[str, Any]) -> dict[str, Any]:
+    """Copy of tool args with verification data hidden, for display and logs."""
+    return {k: (MASK if k in SENSITIVE_ARGS else v) for k, v in args.items()}
+
+
+def mask_result(result: dict[str, Any]) -> dict[str, Any]:
+    """Copy of a tool result with personal fields hidden, for summaries and logs."""
+    return {k: (MASK if k in SENSITIVE_RESULT_KEYS and v else v) for k, v in result.items()}

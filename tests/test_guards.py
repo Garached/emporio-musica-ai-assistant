@@ -1,9 +1,12 @@
 """Security guard tests (no network)."""
 
+import logging
+
 from emporio.agent import MAX_INPUT_CHARS, TOO_LONG_MESSAGE, Agent
-from emporio.guards import LOCKED_ERROR, VerificationGuard
+from emporio.guards import LOCKED_ERROR, MASK, VerificationGuard, mask_args, mask_result
 from emporio.llm.base import LLMResponse, ToolCall
 from emporio.tools import ORDER_NOT_FOUND, run_tool
+from emporio.transcript import format_turn
 
 # Order 5 belongs to a customer whose phone ends in 4321.
 
@@ -110,3 +113,36 @@ def test_long_message_is_rejected_without_calling_the_llm():
 def test_message_at_the_limit_is_accepted():
     agent = Agent(ScriptedLLM(LLMResponse(text="ok")), prompt_builder=lambda: "p")
     assert agent.chat("a" * MAX_INPUT_CHARS).text == "ok"
+
+
+# --- PII masking ---------------------------------------------------------------------
+
+def test_mask_helpers():
+    assert mask_args({"order_id": 5, "phone_last4": "4321"}) == {"order_id": 5, "phone_last4": MASK}
+    masked = mask_result({"customer_first_name": "Rafael", "tracking_code": "BRTP3456789BR",
+                          "status": "delivered", "notes": None})
+    assert masked == {"customer_first_name": MASK, "tracking_code": MASK,
+                      "status": "delivered", "notes": None}
+
+
+def test_phone_digits_masked_in_trace_logs_and_transcript(tmp_path, caplog):
+    seen_by_tool = []
+
+    def runner(name, args):
+        seen_by_tool.append(args)
+        return run_tool(name, args)
+
+    agent = Agent(ScriptedLLM(lookup("4321", "c1"), LLMResponse(text="Seu pedido foi entregue.")),
+                  tool_runner=runner, prompt_builder=lambda: "p")
+    with caplog.at_level(logging.DEBUG, logger="emporio.agent"):
+        reply = agent.chat("pedido 5")
+
+    assert seen_by_tool[0]["phone_last4"] == "4321"  # the tool gets the real value
+    entry = reply.trace[0]
+    assert entry.args["phone_last4"] == MASK
+    for secret in ("4321", "Rafael", "BRTP3456789BR"):
+        assert secret not in entry.summary
+        assert secret not in caplog.text
+        assert secret not in format_turn("pedido 5", reply)
+    # The model still receives the full result (it needs it to answer).
+    assert agent.history[2].tool_results[0].content["customer_first_name"] == "Rafael"
