@@ -41,6 +41,11 @@ def describe(spec: dict[str, Any]) -> str:
 
 # --- helpers -------------------------------------------------------------------------
 
+def _tool_calls(trace: Sequence[ToolTrace]) -> list[ToolTrace]:
+    """Real tool calls only (nudges from the announce-then-stop safeguard are not tools)."""
+    return [t for t in trace if getattr(t, "kind", "tool") == "tool"]
+
+
 def _tools(spec: dict[str, Any]) -> list[str]:
     tool = spec["tool"]
     return [tool] if isinstance(tool, str) else list(tool)
@@ -74,14 +79,14 @@ def prices_in(text: str) -> list[float]:
 
 def tool_called(spec: dict, reply: str, trace: Sequence[ToolTrace]) -> CheckResult:
     wanted = _tools(spec)
-    called = [t.name for t in trace]
+    called = [t.name for t in _tool_calls(trace)]
     ok = any(name in called for name in wanted)
     return CheckResult(describe(spec), PASS if ok else FAIL, f"called: {called or 'none'}")
 
 
 def tool_not_called(spec: dict, reply: str, trace: Sequence[ToolTrace]) -> CheckResult:
     """`tool` may be a name, a list of names, or "*" for "no tool at all"."""
-    called = [t.name for t in trace]
+    called = [t.name for t in _tool_calls(trace)]
     bad = called if spec["tool"] == "*" else [n for n in called if n in _tools(spec)]
     return CheckResult(describe(spec), FAIL if bad else PASS, f"called: {called or 'none'}")
 
@@ -95,7 +100,7 @@ def tool_args(spec: dict, reply: str, trace: Sequence[ToolTrace]) -> CheckResult
             return float(a) == float(b)
         return a == b
 
-    calls = [t.args for t in trace if t.name == spec["tool"]]
+    calls = [t.args for t in _tool_calls(trace) if t.name == spec["tool"]]
     ok = any(all(k in args and same(args[k], v) for k, v in expected.items()) for args in calls)
     return CheckResult(describe(spec), PASS if ok else FAIL, f"{spec['tool']} args: {calls or 'not called'}")
 
@@ -106,7 +111,7 @@ def tool_result_contains(spec: dict, reply: str, trace: Sequence[ToolTrace]) -> 
     If the tool was not called there is nothing to verify, so the check FAILS
     (no vacuous pass): put the check on the turn where the tool really runs.
     """
-    summaries = [t.summary for t in trace if t.name == spec["tool"]]
+    summaries = [t.summary for t in _tool_calls(trace) if t.name == spec["tool"]]
     if not summaries:
         return CheckResult(describe(spec), FAIL, f"{spec['tool']} not called, nothing to verify")
     ok = all(any(_matches(s, v, False) for v in spec["values"]) for s in summaries)

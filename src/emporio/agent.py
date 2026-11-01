@@ -16,7 +16,7 @@ from typing import Any, Callable
 from emporio.guards import VerificationGuard, mask_args, mask_result
 from emporio.llm.base import LLMClient, Message, ToolCall, ToolResult
 from emporio.prompts import build_system_prompt
-from emporio.tools import run_tool, tool_specs
+from emporio.tools import normalize, run_tool, tool_specs
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +28,17 @@ LLM_ERROR_MESSAGE = (
     "Desculpe, estou com uma instabilidade técnica e não consegui responder agora 😕 "
     f"Tente de novo em instantes ou fale com a nossa equipe: {STORE_CONTACT}."
 )
+# Announce-then-stop safeguard: phrases (normalized, accent-free) that mean "I'm about to check".
+ANNOUNCE_PHRASES = (
+    "deixa eu ver", "deixe-me ver", "deixe me ver", "vou verificar", "vou consultar", "vou checar",
+    "um momento", "so um instante", "so um momento", "ja te falo",
+)
+NUDGE_MESSAGE = (
+    "[Mensagem automática do sistema, não do cliente] Você disse que ia consultar, mas não "
+    "chamou nenhuma ferramenta. Chame agora a ferramenta necessária e responda ao cliente "
+    "com o resultado, sem anunciar a consulta."
+)
+
 MAX_INPUT_CHARS = 2000
 TOO_LONG_MESSAGE = (
     "Opa, sua mensagem ficou bem longa 😅 Consegue resumir em até 2.000 caracteres? "
@@ -41,13 +52,18 @@ FALLBACK_MESSAGE = (
 
 @dataclass(frozen=True)
 class ToolTrace:
-    """What happened in one tool call (for debugging and the CLI debug mode)."""
+    """What happened in one tool call (for debugging and the CLI debug mode).
+
+    `kind` is "tool" for real tool calls and "nudge" for the announce-then-stop
+    safeguard (see Agent._should_nudge); nudges are not tool calls.
+    """
 
     name: str
     args: dict[str, Any]
     summary: str
     duration_ms: float
     error: bool = False
+    kind: str = "tool"
 
 
 @dataclass(frozen=True)
@@ -136,6 +152,9 @@ class Agent:
             self.history.append(Message.assistant(response))
             if not response.tool_calls:
                 text = (response.text or "").strip()
+                if self._should_nudge(text, trace):
+                    self._nudge(trace)
+                    continue  # counts toward max_iterations
                 return AgentReply(text or FALLBACK_MESSAGE, trace)
 
             results = [self._execute(call, trace) for call in response.tool_calls]
@@ -144,6 +163,26 @@ class Agent:
         logger.warning("Max iterations (%d) reached", self.max_iterations)
         self.history.append(Message.assistant_text(FALLBACK_MESSAGE))
         return AgentReply(FALLBACK_MESSAGE, trace)
+
+    def _should_nudge(self, text: str, trace: list[ToolTrace]) -> bool:
+        """Announce-then-stop safeguard (heuristic).
+
+        True when the model answered with plain text that only announces a check
+        ("deixe-me ver...", "vou verificar...") while no tool has run in this turn,
+        and we haven't nudged yet. It's a phrase list, so it can miss other wordings
+        or, rarely, nudge a reply that didn't need it.
+        """
+        if any(t.kind == "nudge" for t in trace) or any(t.kind == "tool" for t in trace):
+            return False
+        normalized = normalize(text)
+        return any(phrase in normalized for phrase in ANNOUNCE_PHRASES)
+
+    def _nudge(self, trace: list[ToolTrace]) -> None:
+        """Ask the model once to actually call the tool; the customer never sees this."""
+        self.history.append(Message.user(NUDGE_MESSAGE))
+        trace.append(ToolTrace("nudge", {}, "announced a check without calling a tool; asked to call it now",
+                               0.0, kind="nudge"))
+        logger.debug("nudge: model announced a check without calling a tool")
 
     def _drop_turn(self, user_msg: Message) -> None:
         """Remove an unfinished turn so the next message starts from a clean history."""

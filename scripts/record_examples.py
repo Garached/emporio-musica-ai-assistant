@@ -133,7 +133,7 @@ def main(argv: list[str] | None = None) -> int:
         path = EXAMPLES_DIR / f"{conv.number}-{conv.slug}.md"
         path.write_text(render(conv, turns, settings.gemini_model, datetime.now(STORE_TIMEZONE)),
                         encoding="utf-8")
-        tools = sorted({t.name for _, r in turns for t in r.trace})
+        tools = sorted({t.name for _, r in turns for t in r.trace if t.kind == "tool"})
         print(f"  saved {path.name} | tools: {', '.join(tools) or 'none'}")
     return 0
 

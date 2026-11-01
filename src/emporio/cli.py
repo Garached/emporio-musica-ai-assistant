@@ -137,6 +137,9 @@ class ChatSession:
         if not reply.trace:
             self.console.print("  ⚙ nenhuma ferramenta usada", style="dim")
         for t in reply.trace:
+            if t.kind == "nudge":
+                self.console.print(Text(f"  ↻ nudge: {t.summary}"), style="dim yellow")
+                continue
             self.console.print(
                 Text(f"  ⚙ {t.name}({format_args(t.args)}) → {t.summary} ({t.duration_ms:.0f} ms)"),
                 style="dim red" if t.error else "dim",
