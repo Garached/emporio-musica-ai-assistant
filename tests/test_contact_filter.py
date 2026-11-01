@@ -93,7 +93,8 @@ def test_repeating_the_customers_phishing_url_triggers_a_nudge():
     safe = LLMResponse(text="Cuidado: esse link não é nosso! Fale só pelos canais oficiais: (67) 3341-4444.")
     agent, _ = make_agent(echo, safe)
     reply = agent.chat("Recebi https://emporio-pagamentos.xyz pra pagar, é de vocês?")
-    assert reply.text == safe.text
+    assert reply.text.startswith(safe.text)  # + official contacts line (payment message)
+    assert "emporio-pagamentos" not in reply.text
     assert [t.kind for t in reply.trace] == ["contact"]
 
 

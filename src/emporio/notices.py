@@ -1,12 +1,15 @@
-"""Closed-store notice (policy 7.1): outside business hours, say when the team is back.
+"""Standard lines appended to replies in code, when the model leaves them out.
 
-Enforced in code on the first reply of a conversation: if the store is closed and
-the reply doesn't already say when it reopens, one standard line is appended,
-built from the store-hours logic (tools.get_store_hours_status).
+- Closed-store notice (policy 7.1): on the first reply of a conversation, if the store
+  is closed and the reply doesn't say when it reopens, append the reopening day/time
+  (from tools.get_store_hours_status).
+- Official contacts in payment replies: if the customer's message is about paying and
+  the reply doesn't give the official phone and e-mail, append them (anti-fraud).
 """
 
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -52,3 +55,32 @@ def closed_notice(status: dict[str, Any]) -> str | None:
     day = date.fromisoformat(nxt["date"]).strftime("%d/%m")
     return (f"Nossa loja está fechada agora e a equipe volta {nxt['weekday']}, {day}, "
             f"às {nxt['time']}. Enquanto isso, sigo te ajudando por aqui.")
+
+
+# --- official contacts in payment replies -----------------------------------------------
+
+# Keyword heuristic (whole word, accent-insensitive): the customer's message is about
+# paying. It can miss other wordings or fire on an unrelated "link"; the cost of a false
+# positive is one extra line with the official contacts.
+PAYMENT_KEYWORDS = (
+    "pix", "pagar", "pago", "paguei", "pagamento", "pagamentos", "boleto", "link", "links",
+    "deposito", "depositar", "transferencia", "transferir", "conta bancaria", "comprovante",
+    "comprovantes",
+)
+OFFICIAL_CONTACTS_LINE = (
+    "Para pagamentos, use só os canais oficiais da loja: WhatsApp/telefone (67) 3341-4444 "
+    "ou e-mail contato@emporiodamusica.com.br."
+)
+_OFFICIAL_PHONE = re.compile(r"3341[-\s.]?4444")
+_OFFICIAL_EMAIL = "contato@emporiodamusica.com.br"
+
+
+def is_payment_message(text: str) -> bool:
+    """True if the customer's message mentions paying (see PAYMENT_KEYWORDS)."""
+    normalized = normalize(text)
+    return any(re.search(rf"(?<!\w){re.escape(k)}(?!\w)", normalized) for k in PAYMENT_KEYWORDS)
+
+
+def has_official_contacts(reply: str) -> bool:
+    """True if the reply already gives both the official phone and the official e-mail."""
+    return bool(_OFFICIAL_PHONE.search(reply)) and _OFFICIAL_EMAIL in reply.casefold()

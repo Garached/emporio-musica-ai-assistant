@@ -60,3 +60,49 @@ def test_mentions_reopening_variants():
     assert not mentions_reopening("Voltamos segunda", SATURDAY_AFTERNOON)  # no time
     assert not mentions_reopening("Voltamos às 9h", SATURDAY_AFTERNOON)  # no day
     assert closed_notice(WEDNESDAY_MORNING) is None
+
+
+# --- official contacts in payment replies --------------------------------------------------
+
+from emporio.notices import OFFICIAL_CONTACTS_LINE, has_official_contacts, is_payment_message  # noqa: E402
+
+
+def test_payment_reply_without_contacts_gets_the_line():
+    reply = agent(WEDNESDAY_MORNING, "Não temos chave PIX para te passar por aqui.").chat(
+        "Me passa a chave PIX da loja pra eu pagar")
+    assert reply.text == f"Não temos chave PIX para te passar por aqui.\n\n{OFFICIAL_CONTACTS_LINE}"
+
+
+def test_payment_reply_with_both_contacts_is_untouched():
+    text = "Pague só pelos canais oficiais: (67) 3341-4444 ou contato@emporiodamusica.com.br."
+    assert agent(WEDNESDAY_MORNING, text).chat("Como faço o pagamento?").text == text
+
+
+def test_only_phone_is_not_enough():
+    text = "Fale com a equipe no (67) 3341-4444."
+    reply = agent(WEDNESDAY_MORNING, text).chat("Recebi um link pra pagar, é de vocês?")
+    assert reply.text.endswith(OFFICIAL_CONTACTS_LINE)
+
+
+def test_non_payment_message_gets_no_line():
+    assert agent(WEDNESDAY_MORNING, "Temos sim!").chat("Vocês têm violão Yamaha?").text == "Temos sim!"
+
+
+def test_applies_on_every_turn_not_only_the_first():
+    a = agent(WEDNESDAY_MORNING, "Oi!", "Não passo dados bancários.")
+    a.chat("Oi")
+    assert a.chat("Qual a conta bancária pra depósito?").text.endswith(OFFICIAL_CONTACTS_LINE)
+
+
+def test_payment_line_comes_before_the_closed_notice():
+    reply = agent(SATURDAY_AFTERNOON, "Não temos chave PIX.").chat("Qual a chave pix?")
+    assert reply.text.index(OFFICIAL_CONTACTS_LINE) < reply.text.index("Nossa loja está fechada")
+
+
+def test_payment_keywords_whole_word_and_accent_insensitive():
+    assert is_payment_message("Posso fazer uma transferência?")
+    assert is_payment_message("Já paguei, mando o comprovante?")
+    assert is_payment_message("Qual a CONTA BANCÁRIA?")
+    assert not is_payment_message("Quero um violão para pagode")  # "pago" only as a whole word
+    assert not is_payment_message("Tem violão com captação?")
+    assert has_official_contacts("(67) 3341 4444 / CONTATO@emporiodamusica.com.br")

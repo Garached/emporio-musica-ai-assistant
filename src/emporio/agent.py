@@ -18,7 +18,13 @@ from emporio.contact_filter import allowed_from_result, official_values, unoffic
 from emporio.grounding import format_brl, numbers_in_result, numbers_in_text, ungrounded_values
 from emporio.guards import VerificationGuard, mask_args, mask_result, mask_text, sensitive_values
 from emporio.llm.base import LLMClient, Message, ToolCall, ToolResult
-from emporio.notices import closed_notice, mentions_reopening
+from emporio.notices import (
+    OFFICIAL_CONTACTS_LINE,
+    closed_notice,
+    has_official_contacts,
+    is_payment_message,
+    mentions_reopening,
+)
 from emporio.prompts import build_system_prompt
 from emporio.tools import get_store_hours_status, normalize, run_tool, tool_specs
 
@@ -198,7 +204,7 @@ class Agent:
                 reply = self._finish(response.text or "", trace)
                 if reply is None:
                     continue  # a retry or nudge was sent; counts toward max_iterations
-                return self._with_closed_notice(reply)
+                return self._with_closed_notice(self._with_payment_contacts(reply, user_message))
 
             results = [self._execute(call, trace) for call in response.tool_calls]
             self.history.append(Message.tool(results))
@@ -251,6 +257,14 @@ class Agent:
                                    "fallback sent", 0.0, kind="blocked", rejected_draft=self._mask(text)))
             return self._fallback(trace, "unofficial contact/payment details after nudge")
         return AgentReply(text, trace)
+
+    def _with_payment_contacts(self, reply: AgentReply, user_message: str) -> AgentReply:
+        """Anti-fraud, enforced in code: when the customer asks about paying, the reply must
+        point to the official channels. Keyword heuristic (see notices.PAYMENT_KEYWORDS)."""
+        if not is_payment_message(user_message) or has_official_contacts(reply.text):
+            return reply
+        logger.debug("official contacts appended to a payment reply")
+        return AgentReply(f"{reply.text}\n\n{OFFICIAL_CONTACTS_LINE}", reply.trace)
 
     def _with_closed_notice(self, reply: AgentReply) -> AgentReply:
         """Policy 7.1, enforced in code: on the first real reply of the conversation, if the

@@ -80,7 +80,7 @@ def test_prices_from_an_earlier_turn_count_as_grounded():
     agent, llm = make_agent(SEARCH_GD20, GROUNDED, LLMResponse(text="No PIX fica R$ 2.089,05."))
     agent.chat("Quanto custa o Takamine GD20?")
     reply = agent.chat("E no PIX?")
-    assert reply.text == "No PIX fica R$ 2.089,05." and reply.trace == []
+    assert reply.text.startswith("No PIX fica R$ 2.089,05.") and reply.trace == []
 
 
 def test_values_said_by_the_customer_count_as_grounded():
