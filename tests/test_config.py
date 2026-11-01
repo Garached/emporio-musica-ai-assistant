@@ -15,7 +15,7 @@ def env(monkeypatch):
 
 def test_defaults(env):
     settings = load_settings()
-    assert settings.gemini_model == DEFAULT_MODEL == "gemini-3.8-flash"
+    assert settings.gemini_model == DEFAULT_MODEL == "gemini-3.5-flash-lite"
     assert settings.gemini_thinking_level == "low"
 
 

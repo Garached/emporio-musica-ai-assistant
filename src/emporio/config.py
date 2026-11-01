@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
-DEFAULT_MODEL = "gemini-3.8-flash"
+DEFAULT_MODEL = "gemini-3.5-flash-lite"
 
 # Low thinking: faster and cheaper, enough for customer service.
 DEFAULT_THINKING_LEVEL = "low"
