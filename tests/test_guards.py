@@ -1,6 +1,6 @@
 """Security guard tests (no network)."""
 
-from emporio.agent import Agent
+from emporio.agent import MAX_INPUT_CHARS, TOO_LONG_MESSAGE, Agent
 from emporio.guards import LOCKED_ERROR, VerificationGuard
 from emporio.llm.base import LLMResponse, ToolCall
 from emporio.tools import ORDER_NOT_FOUND, run_tool
@@ -91,3 +91,22 @@ def test_agent_locks_and_new_agent_resets():
     fresh = Agent(ScriptedLLM(lookup("4321", "x"), LLMResponse(text="ok")), prompt_builder=lambda: "p")
     assert not fresh.verification_guard.locked
     assert fresh.chat("final 4321").trace[0].error is False
+
+
+# --- input limit ---------------------------------------------------------------------
+
+class FailIfCalledLLM:
+    def generate(self, system_prompt, messages, tools):
+        raise AssertionError("the LLM must not be called")
+
+
+def test_long_message_is_rejected_without_calling_the_llm():
+    agent = Agent(FailIfCalledLLM(), prompt_builder=lambda: "p")
+    reply = agent.chat("a" * (MAX_INPUT_CHARS + 1))
+    assert reply.text == TOO_LONG_MESSAGE
+    assert reply.trace == [] and agent.history == []
+
+
+def test_message_at_the_limit_is_accepted():
+    agent = Agent(ScriptedLLM(LLMResponse(text="ok")), prompt_builder=lambda: "p")
+    assert agent.chat("a" * MAX_INPUT_CHARS).text == "ok"

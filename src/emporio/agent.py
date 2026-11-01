@@ -28,6 +28,11 @@ LLM_ERROR_MESSAGE = (
     "Desculpe, estou com uma instabilidade técnica e não consegui responder agora 😕 "
     f"Tente de novo em instantes ou fale com a nossa equipe: {STORE_CONTACT}."
 )
+MAX_INPUT_CHARS = 2000
+TOO_LONG_MESSAGE = (
+    "Opa, sua mensagem ficou bem longa 😅 Consegue resumir em até 2.000 caracteres? "
+    "Assim eu te ajudo melhor."
+)
 FALLBACK_MESSAGE = (
     "Desculpe, não consegui concluir essa consulta agora. Pode reformular a pergunta? "
     f"Se preferir, a nossa equipe ajuda você: {STORE_CONTACT}."
@@ -108,6 +113,10 @@ class Agent:
 
     def chat(self, user_message: str) -> AgentReply:
         """Answer one user message, running tools as the LLM requests them."""
+        if len(user_message) > MAX_INPUT_CHARS:
+            # Rejected before the LLM: limits cost and the room for prompt-injection payloads.
+            logger.warning("Rejected message with %d chars (max %d)", len(user_message), MAX_INPUT_CHARS)
+            return AgentReply(TOO_LONG_MESSAGE)
         user_msg = Message.user(user_message)
         self.history.append(user_msg)
         trace: list[ToolTrace] = []
