@@ -218,3 +218,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Chat transcripts (best ones are copied to a separate examples folder)
+transcripts/

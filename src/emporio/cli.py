@@ -7,6 +7,7 @@ import logging
 import os
 import sys
 from datetime import datetime
+from pathlib import Path
 from typing import Callable
 
 from rich.console import Console
@@ -15,7 +16,14 @@ from rich.panel import Panel
 from rich.text import Text
 
 from emporio.agent import Agent, AgentReply
-from emporio.config import STORE_TIMEZONE, ConfigError, load_settings, parse_today
+from emporio.config import (
+    STORE_TIMEZONE,
+    ConfigError,
+    current_datetime,
+    load_settings,
+    parse_today,
+)
+from emporio.transcript import TRANSCRIPTS_DIR, Transcript
 
 PROMPT = "[bold cyan]Você:[/] "
 GOODBYE = "Até mais! Obrigado por falar com a Empório da Música. 🎸"
@@ -41,13 +49,25 @@ class ChatSession:
     """One terminal session: reads input, talks to the agent, prints replies."""
 
     def __init__(
-        self, agent_factory: AgentFactory, console: Console, *, model: str, debug: bool = False
+        self,
+        agent_factory: AgentFactory,
+        console: Console,
+        *,
+        model: str,
+        debug: bool = False,
+        transcripts_dir: Path = TRANSCRIPTS_DIR,
     ) -> None:
         self.agent_factory = agent_factory
         self.console = console
         self.model = model
         self.debug = debug
+        self.transcripts_dir = transcripts_dir
         self.agent = agent_factory()
+        self.transcript = self.new_transcript()
+
+    def new_transcript(self) -> Transcript:
+        return Transcript(self.transcripts_dir, model=self.model, today=current_datetime(),
+                          simulated_today=bool(os.getenv("EMPORIO_TODAY", "").strip()))
 
     def run(self, read_input: Callable[[], str]) -> None:
         """Main loop. Ctrl+C / Ctrl+D end the session gracefully."""
@@ -90,6 +110,7 @@ class ChatSession:
     def new_conversation(self) -> None:
         """Start over with a fresh agent (empty history)."""
         self.agent = self.agent_factory()
+        self.transcript = self.new_transcript()
         self.console.print("Nova conversa iniciada. ✨", style="yellow")
 
     def show_help(self) -> None:
@@ -101,6 +122,7 @@ class ChatSession:
         with self.console.status("Clave está digitando...", spinner="dots"):
             reply = self.agent.chat(message)
         self.print_reply(reply)
+        self.transcript.add_turn(message, reply)
         return reply
 
     def print_reply(self, reply: AgentReply) -> None:
@@ -127,6 +149,10 @@ class ChatSession:
             (f"Atendimento com a Clave, assistente virtual • modelo: {self.model}\n", "dim"),
             ("Comandos: /ajuda /nova /debug /sair", "dim"),
         )
+        if self.transcript.simulated_today:
+            body.append(f"\nData simulada: {self.transcript.today:%d/%m/%Y %H:%M}", "yellow")
+        if self.debug:
+            body.append("\nModo debug ligado", "yellow")
         self.console.print(Panel(body, border_style="magenta", expand=False))
 
 
