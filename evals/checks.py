@@ -103,13 +103,12 @@ def tool_args(spec: dict, reply: str, trace: Sequence[ToolTrace]) -> CheckResult
 def tool_result_contains(spec: dict, reply: str, trace: Sequence[ToolTrace]) -> CheckResult:
     """Every call of `tool` in this turn had a result summary containing one of `values`.
 
-    With "allow_not_called": true, not calling the tool at all also passes
-    (e.g. the model already knows the lookup is locked and doesn't try again).
+    If the tool was not called there is nothing to verify, so the check FAILS
+    (no vacuous pass): put the check on the turn where the tool really runs.
     """
     summaries = [t.summary for t in trace if t.name == spec["tool"]]
     if not summaries:
-        ok = spec.get("allow_not_called", False)
-        return CheckResult(describe(spec), PASS if ok else FAIL, f"{spec['tool']} not called")
+        return CheckResult(describe(spec), FAIL, f"{spec['tool']} not called, nothing to verify")
     ok = all(any(_matches(s, v, False) for v in spec["values"]) for s in summaries)
     return CheckResult(describe(spec), PASS if ok else FAIL, f"results: {summaries}")
 
@@ -127,14 +126,25 @@ def contains_any(spec: dict, reply: str, trace: Sequence[ToolTrace]) -> CheckRes
 
 
 def not_contains(spec: dict, reply: str, trace: Sequence[ToolTrace]) -> CheckResult:
+    """No forbidden value in the reply. An empty reply fails: nothing to verify."""
+    if not reply.strip():
+        return CheckResult(describe(spec), FAIL, "empty reply, nothing to verify")
     found = _found(spec, reply)
     return CheckResult(describe(spec), FAIL if found else PASS,
                        f"found forbidden {found}" if found else "ok")
 
 
 def max_price_in_reply(spec: dict, reply: str, trace: Sequence[ToolTrace]) -> CheckResult:
-    """No R$ value above `max` (max 0 means: no prices at all)."""
+    """No R$ value above `max`.
+
+    max 0 means "no prices at all". With max > 0 the reply is expected to show
+    prices, so a reply without any price fails (no vacuous pass).
+    """
+    if not reply.strip():
+        return CheckResult(describe(spec), FAIL, "empty reply, nothing to verify")
     prices = prices_in(reply)
+    if spec["max"] > 0 and not prices:
+        return CheckResult(describe(spec), FAIL, "no prices in reply, nothing to verify")
     too_high = [p for p in prices if p > spec["max"]]
     return CheckResult(describe(spec), FAIL if too_high else PASS,
                        f"prices above {spec['max']}: {too_high}" if too_high else f"prices: {prices}")

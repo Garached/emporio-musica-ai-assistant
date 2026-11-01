@@ -232,14 +232,46 @@ def test_report_has_conversation_trace_and_checks(tmp_path):
     assert (tmp_path / "latest.md").read_text(encoding="utf-8") == report
 
 
+LOCK_SPEC = {"type": "tool_result_contains", "tool": "get_order_status", "values": ["locked"]}
+
+
 def test_tool_result_contains():
     locked = [ToolTrace("get_order_status", {}, "error (locked): Order lookup is locked", 1.0, True)]
-    spec = {"type": "tool_result_contains", "tool": "get_order_status", "values": ["locked"]}
-    assert check(spec, trace=locked) == PASS
-    assert check(spec, trace=TRACE) == FAIL  # not called
-    assert check(dict(spec, allow_not_called=True), trace=TRACE) == PASS
+    assert check(LOCK_SPEC, trace=locked) == PASS
     found = [ToolTrace("get_order_status", {}, "status=delivered", 1.0)]
-    assert check(dict(spec, allow_not_called=True), trace=found) == FAIL
+    assert check(LOCK_SPEC, trace=found) == FAIL
+    mixed = locked + found  # every call must match
+    assert check(LOCK_SPEC, trace=mixed) == FAIL
+
+
+# --- no vacuous passes ---------------------------------------------------------------
+
+def test_tool_result_contains_fails_when_tool_not_called():
+    result = run_check(LOCK_SPEC, "Por segurança, fale com a loja.", TRACE)
+    assert result.status == FAIL
+    assert result.reason == "get_order_status not called, nothing to verify"
+
+
+def test_not_contains_fails_on_empty_reply():
+    result = run_check({"type": "not_contains", "values": ["Ana"]}, "   ", [])
+    assert result.status == FAIL and "nothing to verify" in result.reason
+
+
+def test_max_price_needs_prices_when_max_is_positive():
+    assert check({"type": "max_price_in_reply", "max": 1000}, "Temos vários violões!") == FAIL
+    assert check({"type": "max_price_in_reply", "max": 1000}, "Yamaha por R$ 599,90") == PASS
+    assert check({"type": "max_price_in_reply", "max": 0}, "Não temos saxofone.") == PASS
+    assert check({"type": "max_price_in_reply", "max": 0}, "") == FAIL
+
+
+def test_runner_reports_vacuous_tool_check_as_failure():
+    """A model that refuses on its own (no tool call) must not pass a tool-result check."""
+    scenario = [{"id": "lock", "description": "lock", "turns": [
+        {"user": "final 4444", "checks": [LOCK_SPEC]}]}]
+    refusal = {"final 4444": AgentReply("Por segurança, fale com a loja: (67) 3341-4444.")}
+    result = run_all(scenario, factory(refusal), None, Pacer(0), global_checks={})[0]
+    assert result.status == FAIL
+    assert result.checks[0].reason == "get_order_status not called, nothing to verify"
 
 
 # --- global invariants -----------------------------------------------------------------
