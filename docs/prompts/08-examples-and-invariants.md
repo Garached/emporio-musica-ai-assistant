@@ -66,3 +66,42 @@ English Conventional Commit messages. Do NOT push.
 
 When done, summarize: final eval score, any failing global check (with the
 reply), and paste example 04 in full so I can review it.
+
+---
+
+## Follow-up fixes (final run)
+
+Decisions:
+
+1. promotions (announce-then-stop): do BOTH.
+   - Prompt rule: never announce that you'll check something; call the
+     tool in the same response and answer with the result.
+   - Code safeguard in the agent loop: if the model returns plain text with
+     no tool calls, no tool has been called yet in this turn, and the text
+     matches a short list of "about to check" phrases (e.g. "deixa eu ver",
+     "deixe-me ver", "vou verificar", "vou consultar", "um momento", "só um
+     instante", "já te falo"), send ONE nudge asking the model to call the
+     needed tool now and answer the customer. At most once per turn, it
+     counts toward the 6-iteration limit, it's recorded in the trace as a
+     nudge, and the customer only sees the final answer. Document it as a
+     heuristic (docstring + it will go in the README limitations).
+   - Unit tests with the fake LLM: announce text -> nudge -> tool call ->
+     final answer; nudge happens only once; a normal answer gets no nudge.
+
+2. discontinued: accept the behavior (stating the price range and asking
+   before listing expensive alternatives is good UX). Change the strict
+   check: pass if the reply names an alternative OR offers to show them
+   (e.g. "alternativ", "opções", "opcoes"). Keep the existing judge.
+
+3. Re-run: the promotions scenario 3 times (--only promotions) to check
+   it's stable, then the FULL suite once with --judge, and update
+   evals/results/final.md. Note in the report header that the previous run
+   scored 166/170 with the same code, which shows run-to-run variance. If
+   anything fails, stop and show me.
+
+4. Append this to docs/prompts/08-examples-and-invariants.md under
+   "Follow-up fixes (final run)".
+
+Small logical commits (prompt rule, loop nudge + tests, check adjustment,
+final results, prompt). Short English Conventional Commit messages. Do NOT
+push.
