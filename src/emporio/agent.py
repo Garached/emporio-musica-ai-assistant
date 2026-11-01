@@ -61,7 +61,8 @@ class AgentReply:
 def summarize_result(result: dict[str, Any], max_len: int = 160) -> str:
     """Short, human-readable summary of a tool result."""
     if "error" in result:
-        return f"error: {result['error']}"[:max_len]
+        prefix = "error (locked)" if result.get("locked") else "error"
+        return f"{prefix}: {result['error']}"[:max_len]
     parts = []
     for key, value in result.items():
         if isinstance(value, list):

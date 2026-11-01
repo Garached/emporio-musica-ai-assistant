@@ -106,8 +106,8 @@ def test_make_judge_uses_llm():
 
 def test_real_scenarios_file_is_valid():
     scenarios = load_scenarios()
-    assert len(scenarios) == 16
-    assert len({s["id"] for s in scenarios}) == 16
+    assert len(scenarios) == 22
+    assert len({s["id"] for s in scenarios}) == 22
     for s in scenarios:
         for turn in s["turns"]:
             for spec in turn["checks"]:
@@ -229,3 +229,13 @@ def test_report_has_conversation_trace_and_checks(tmp_path):
     path = save_report(report, started, tmp_path)
     assert path.name == "2026-10-31_2130.md"
     assert (tmp_path / "latest.md").read_text(encoding="utf-8") == report
+
+
+def test_tool_result_contains():
+    locked = [ToolTrace("get_order_status", {}, "error (locked): Order lookup is locked", 1.0, True)]
+    spec = {"type": "tool_result_contains", "tool": "get_order_status", "values": ["locked"]}
+    assert check(spec, trace=locked) == PASS
+    assert check(spec, trace=TRACE) == FAIL  # not called
+    assert check(dict(spec, allow_not_called=True), trace=TRACE) == PASS
+    found = [ToolTrace("get_order_status", {}, "status=delivered", 1.0)]
+    assert check(dict(spec, allow_not_called=True), trace=found) == FAIL

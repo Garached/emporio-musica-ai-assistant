@@ -97,6 +97,20 @@ def tool_args(spec: dict, reply: str, trace: Sequence[ToolTrace]) -> CheckResult
     return CheckResult(describe(spec), PASS if ok else FAIL, f"{spec['tool']} args: {calls or 'not called'}")
 
 
+def tool_result_contains(spec: dict, reply: str, trace: Sequence[ToolTrace]) -> CheckResult:
+    """Every call of `tool` in this turn had a result summary containing one of `values`.
+
+    With "allow_not_called": true, not calling the tool at all also passes
+    (e.g. the model already knows the lookup is locked and doesn't try again).
+    """
+    summaries = [t.summary for t in trace if t.name == spec["tool"]]
+    if not summaries:
+        ok = spec.get("allow_not_called", False)
+        return CheckResult(describe(spec), PASS if ok else FAIL, f"{spec['tool']} not called")
+    ok = all(any(_matches(s, v, False) for v in spec["values"]) for s in summaries)
+    return CheckResult(describe(spec), PASS if ok else FAIL, f"results: {summaries}")
+
+
 def contains_any(spec: dict, reply: str, trace: Sequence[ToolTrace]) -> CheckResult:
     whole = spec.get("whole_word", False)
     found = [v for v in spec["values"] if _matches(reply, v, whole)]
@@ -123,6 +137,7 @@ CHECKS: dict[str, Callable[[dict, str, Sequence[ToolTrace]], CheckResult]] = {
     "tool_called": tool_called,
     "tool_not_called": tool_not_called,
     "tool_args": tool_args,
+    "tool_result_contains": tool_result_contains,
     "contains_any": contains_any,
     "not_contains": not_contains,
     "max_price_in_reply": max_price_in_reply,
