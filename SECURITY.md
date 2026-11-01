@@ -100,6 +100,12 @@ A prompt can be talked around; code can't.
   - Output is never executed and never used in SQL, shell or HTML.
   - The CLI prints replies as `rich.Text`, so model output can't inject terminal markup.
   - Markdown emphasis is stripped before display ([formatting.py](src/emporio/formatting.py)).
+  - **Output grounding check:** before a reply is sent, every R$ value in it must match a
+    number returned by a tool in this conversation (or written by the customer), within
+    R$ 0,01. Otherwise the model gets one nudge; if the reply is still ungrounded, the
+    customer gets the fallback message with the store contact instead
+    ([grounding.py](src/emporio/grounding.py), `Agent._finish` in [agent.py](src/emporio/agent.py)).
+  - An empty model response is retried once before falling back.
   - Tool arguments from the model are validated before running:
     - unknown or missing arguments are rejected ([tools.py](src/emporio/tools.py) `run_tool`);
     - categories and policy topics are enums;
@@ -139,13 +145,21 @@ A prompt can be talked around; code can't.
   - Installments are computed in code too: `get_installment_options` applies the tiered
     minimums of policy 3.1, and the prompt forbids calculating installments
     ([business_rules.py](src/emporio/business_rules.py) `installment_options`).
+  - **Output grounding (code):** R$ values the model invents or computes by itself (prices
+    of non-existent products, "savings", totals) are blocked before reaching the customer.
+    This was added after a recorded example listed three invented products with prices.
+    See LLM05.
+  - The prompt forbids popularity, sales and review claims (there is no such data), and a
+    global eval invariant checks every reply for them.
   - Search reports `unavailable_matches`, and a price-gap note is generated in code.
   - The prompt forbids stating facts without calling a tool.
   - The open/closed status and return windows are computed in code.
   - Evals cover these cases ([evals/results/](evals/results/)).
-- **Residual:** the model can still phrase things wrongly. The evals sample behavior and
-  don't prove it (single runs; the judge is the same model). Production needs regular
-  eval runs, sampled human review and customer feedback loops.
+- **Residual:** the model can still phrase things wrongly. The grounding check covers R$
+  values only: a wrong product name, spec or date with no price is not caught, and a real
+  price attached to the wrong product would pass (it was returned by a tool). The evals
+  sample behavior and don't prove it (single runs; the judge is the same model).
+  Production needs regular eval runs, sampled human review and customer feedback loops.
 
 ### LLM10 Unbounded Consumption
 - **Here:** free-tier quota and cost; very long messages; tool loops.
