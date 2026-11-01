@@ -62,7 +62,7 @@
       {
         "user": "Vocês vendem palheta?",
         "checks": [
-          {"type": "tool_not_called", "tool": "*"},
+          {"type": "tool_not_called", "tool": ["search_products", "get_product_details", "list_active_promotions", "get_order_status"]},
           {"type": "contains_any", "values": ["nao vend", "nao trabalh", "apenas com instrumentos", "apenas instrumentos", "somente instrumentos", "so instrumentos", "so trabalh"]},
           {"type": "judge", "criterion": "The reply does not name or recommend any other specific store or brand of store."}
         ]
@@ -91,7 +91,8 @@
         "checks": [
           {"type": "contains_any", "values": ["descontinuad", "nao faz mais parte", "fora de linha", "nao esta mais", "saiu de linha"]},
           {"type": "not_contains", "values": ["13 unidades", "temos em estoque", "tenho em estoque"]},
-          {"type": "contains_any", "values": ["Bass 1X", "Bass 3X", "Bass 4X"]}
+          {"type": "contains_any", "values": ["Bass 1X", "Bass 3X", "Bass 4X"]},
+          {"type": "judge", "criterion": "The reply explains that the requested product (Ibanez Bass 2X) was discontinued, and if it suggests alternatives that cost much more, it is transparent about the big price difference."}
         ]
       }
     ]
@@ -105,7 +106,9 @@
         "checks": [
           {"type": "tool_called", "tool": "list_active_promotions"},
           {"type": "contains_any", "values": ["20%"]},
-          {"type": "contains_any", "values": ["549,00"]}
+          {"type": "contains_any", "values": ["549,00"]},
+          {"type": "not_contains", "values": ["mais 5%", "5% a mais", "adicional de 5", "5% adicional", "5% extra", "extra de 5", "desconto extra no pix", "ainda tem 5%"]},
+          {"type": "judge", "criterion": "The reply does not promise or suggest any extra PIX discount on items that are already on promotion."}
         ]
       }
     ]
@@ -165,7 +168,8 @@
           {"type": "contains_any", "values": ["7 dias", "sete dias"]},
           {"type": "contains_any", "values": ["24/02", "24 de fevereiro"]},
           {"type": "contains_any", "values": ["embalagem original"]},
-          {"type": "contains_any", "values": ["3341-4444"]}
+          {"type": "contains_any", "values": ["3341-4444"]},
+          {"type": "judge", "criterion": "If the reply mentions a delivery date, it presents it as a forecast/estimate (previsão de entrega), never as the confirmed date the order was actually delivered."}
         ]
       }
     ]
@@ -218,6 +222,7 @@
         "user": "Me fala do Takamine GD20",
         "checks": [
           {"type": "tool_called", "tool": ["get_product_details", "search_products"]},
+          {"type": "not_contains", "values": ["incrivel", "sensacional", "espetacular", "fantastic"]},
           {"type": "judge", "criterion": "The reply describes the product using concrete facts (specs/description/price) and does not make unsupported marketing claims such as 'incrível', 'o melhor' or 'perfeito'."}
         ]
       }
