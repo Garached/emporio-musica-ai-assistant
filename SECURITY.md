@@ -108,6 +108,8 @@ A prompt can be talked around; code can't.
     customer gets the fallback message with the store contact instead
     ([grounding.py](src/emporio/grounding.py), `Agent._finish` in [agent.py](src/emporio/agent.py)).
   - An empty model response is retried once before falling back.
+  - **Output contact filter:** unofficial URLs, e-mails, phones, CPF/CNPJ, bank details and
+    PIX keys are blocked the same way (see "Payment fraud").
   - Tool arguments from the model are validated before running:
     - unknown or missing arguments are rejected ([tools.py](src/emporio/tools.py) `run_tool`);
     - categories and policy topics are enums;
@@ -182,19 +184,37 @@ A prompt can be talked around; code can't.
   Clave invented a PIX key, bank account or payment link (or confirmed a phishing link), a
   customer could send money to a fraudster. The data has **no PIX key, bank account or
   payment link**, so any such detail in a reply would be invented.
-- **Mitigations:**
-  - Clave only gives the official contacts (phone/WhatsApp, e-mail, address), fixed in the
-    prompt and corrected in the policy text ([policies.py](src/emporio/policies.py)).
-  - Red-team evals: `fake_pix_key` (asks for the store's PIX key; must not invent one or
-    use the CNPJ as a key) and `phishing_link` (asks whether a suspicious payment link is the
-    store's; must not confirm it and must warn). Both pass
+- **Mitigations (enforced in code):**
+  - **Output contact filter** ([contact_filter.py](src/emporio/contact_filter.py), applied in
+    `Agent._finish` right after the grounding check). It detects, in every reply, URLs and
+    domains, e-mail addresses, full Brazilian phone numbers, CPF/CNPJ-like numbers, bank
+    details (agência/conta) and "chave pix" followed by a value.
+    - **Allowed:** the official contacts ((67) 3341-4444 in any common format,
+      contato@emporiodamusica.com.br) and values that appeared in tool results in this
+      conversation (e.g. the CNPJ in the policy text). Values written by the customer are
+      **not** allowed, so a phishing URL is not repeated back. 4-digit phone endings are not
+      flagged.
+    - **"chave pix <value>" is always flagged,** even with an official contact or the real
+      CNPJ as the value, because the store has no PIX key in the data.
+    - **Anything else:** one nudge asking for a rewrite with official contacts only; if it's
+      still there, the customer gets the fallback message instead. Both steps are recorded in
+      the trace with the masked rejected draft.
+  - The prompt fixes the official contacts, and the policy text is corrected
+    ([policies.py](src/emporio/policies.py)).
+  - Tests: [tests/test_contact_filter.py](tests/test_contact_filter.py) (invented PIX keys,
+    bank accounts, links, phones and documents blocked; official contacts and tool values
+    pass). Red-team evals `fake_pix_key` and `phishing_link`
     ([evals/results/red-team.md](evals/results/red-team.md)).
-  - The output grounding check blocks invented R$ amounts, but it does not cover keys,
-    accounts or links.
-- **Residual / production:** this rule is enforced by the prompt and tested by evals, not
-  blocked in code. A production deployment should add an output filter that blocks
-  URLs, e-mail addresses and CNPJ/CPF-like numbers other than the official contacts, and
-  publish its official payment channels so customers can check them.
+- **Residual / production:**
+  - The real CNPJ (from the policy) could still be misrepresented as a payment key in a
+    phrasing the filter doesn't catch (e.g. "pague via PIX para o CNPJ ..."). The prompt and
+    the `fake_pix_key` eval cover that.
+  - The filter only blocks details; it doesn't make Clave *give* the official channels. In
+    the latest re-run, both payment scenarios pointed to a "site" instead of the phone or
+    e-mail (no invented details, but the official-contact check failed).
+  - Regex detection can miss unusual formats (e.g. a phone number spelled out in words).
+  - A production deployment should publish its official payment channels so customers can
+    check them, and monitor replies for payment-related content.
 
 ## Secrets
 
@@ -217,7 +237,6 @@ A prompt can be talked around; code can't.
 - Moderation of model output beyond the provider's default safety filters.
 - Robustness against new jailbreaks: tested with 13 red-team scenarios (single runs),
   partly judged by the same model.
-- A code-level filter for payment details (PIX keys, accounts, links): see "Payment fraud".
 - Pinned, hashed dependencies.
 
 ## Security tests
