@@ -29,7 +29,17 @@ from emporio.agent import LLM_ERROR_MESSAGE, Agent, AgentReply
 from emporio.config import STORE_TIMEZONE
 from emporio.llm.base import LLMError
 from emporio.transcript import format_turn
-from evals.checks import FAIL, PASS, SKIP, CheckResult, describe, make_judge, run_check
+from evals.checks import (
+    FAIL,
+    GLOBAL_CHECKS,
+    PASS,
+    SKIP,
+    CheckResult,
+    describe,
+    make_judge,
+    run_check,
+    run_global_checks,
+)
 
 EVALS_DIR = Path(__file__).resolve().parent
 SCENARIOS_FILE = EVALS_DIR / "scenarios.json"
@@ -114,12 +124,17 @@ def conversation_text(turns: list[TurnResult]) -> str:
 
 
 def evaluate_turn(turn: TurnResult, specs: list[dict], judge: JudgeFn | None,
-                  history: list[TurnResult], pace: Pacer) -> None:
-    """Run the turn's checks; judge checks only when a judge is given."""
+                  history: list[TurnResult], pace: Pacer,
+                  global_checks: dict[str, dict] = GLOBAL_CHECKS) -> None:
+    """Run the turn's checks, then the global invariants; judges only when a judge is given."""
     for spec in specs:
         if spec["type"] != "judge":
             turn.checks.append(run_check(spec, turn.reply.text, turn.reply.trace))
-        elif judge is None:
+    turn.checks += run_global_checks(turn.reply.text, turn.reply.trace, global_checks)
+    for spec in specs:
+        if spec["type"] != "judge":
+            continue
+        if judge is None:
             turn.checks.append(CheckResult(describe(spec), SKIP, "judge disabled (use --judge)"))
         else:
             pace()
@@ -136,7 +151,8 @@ def new_result(scenario: dict, skipped_reason: str | None = None) -> ScenarioRes
 
 
 def run_scenario(scenario: dict, agent_factory: AgentFactory, judge: JudgeFn | None,
-                 pace: Pacer, result: ScenarioResult | None = None) -> ScenarioResult:
+                 pace: Pacer, result: ScenarioResult | None = None,
+                 global_checks: dict[str, dict] = GLOBAL_CHECKS) -> ScenarioResult:
     """Run one scenario in a fresh agent, filling `result` as it goes.
 
     Raises LLMUnavailable if the model stops answering (partial turns stay in `result`).
@@ -152,7 +168,7 @@ def run_scenario(scenario: dict, agent_factory: AgentFactory, judge: JudgeFn | N
                 result.skipped_reason = "LLM unavailable (quota exhausted or persistent errors)"
                 raise LLMUnavailable(result.skipped_reason)
             try:
-                evaluate_turn(turn, spec["checks"], judge, result.turns, pace)
+                evaluate_turn(turn, spec["checks"], judge, result.turns, pace, global_checks)
             except LLMUnavailable as exc:
                 result.skipped_reason = f"judge unavailable: {exc}"
                 raise
@@ -160,8 +176,9 @@ def run_scenario(scenario: dict, agent_factory: AgentFactory, judge: JudgeFn | N
 
 
 def run_all(scenarios: list[dict], agent_factory: AgentFactory, judge: JudgeFn | None,
-            pace: Pacer, console: Console | None = None) -> list[ScenarioResult]:
-    """Run every scenario; if the model becomes unavailable, skip the rest."""
+            pace: Pacer, console: Console | None = None,
+            global_checks: dict[str, dict] = GLOBAL_CHECKS) -> list[ScenarioResult]:
+    """Run every scenario (plus the global checks on every reply); stop if the model is unavailable."""
     results: list[ScenarioResult] = []
     stop_reason: str | None = None
     for scenario in scenarios:
@@ -172,7 +189,7 @@ def run_all(scenarios: list[dict], agent_factory: AgentFactory, judge: JudgeFn |
             console.print(f"[dim]running {scenario['id']}...[/]")
         result = new_result(scenario)
         try:
-            run_scenario(scenario, agent_factory, judge, pace, result)
+            run_scenario(scenario, agent_factory, judge, pace, result, global_checks)
         except LLMUnavailable as exc:
             stop_reason = f"not run: LLM unavailable ({exc})"
             result.skipped_reason = result.skipped_reason or str(exc)

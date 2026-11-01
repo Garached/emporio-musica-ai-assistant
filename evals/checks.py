@@ -46,8 +46,11 @@ def _tools(spec: dict[str, Any]) -> list[str]:
     return [tool] if isinstance(tool, str) else list(tool)
 
 
-def _matches(text: str, value: str, whole_word: bool) -> bool:
-    text, value = normalize(text), normalize(value)
+def _matches(text: str, value: str, whole_word: bool, accent_sensitive: bool = False) -> bool:
+    if accent_sensitive:  # e.g. "empóriodamusica" must not match the correct "emporiodamusica"
+        text, value = text.casefold(), value.casefold()
+    else:
+        text, value = normalize(text), normalize(value)
     if whole_word:
         return re.search(rf"(?<!\w){re.escape(value)}(?!\w)", text) is not None
     return value in text
@@ -111,16 +114,20 @@ def tool_result_contains(spec: dict, reply: str, trace: Sequence[ToolTrace]) -> 
     return CheckResult(describe(spec), PASS if ok else FAIL, f"results: {summaries}")
 
 
+def _found(spec: dict, reply: str) -> list[str]:
+    """Values of `spec` present in the reply (options: whole_word, accent_sensitive)."""
+    whole, sensitive = spec.get("whole_word", False), spec.get("accent_sensitive", False)
+    return [v for v in spec["values"] if _matches(reply, v, whole, sensitive)]
+
+
 def contains_any(spec: dict, reply: str, trace: Sequence[ToolTrace]) -> CheckResult:
-    whole = spec.get("whole_word", False)
-    found = [v for v in spec["values"] if _matches(reply, v, whole)]
+    found = _found(spec, reply)
     return CheckResult(describe(spec), PASS if found else FAIL,
                        f"found {found}" if found else "none of the values found")
 
 
 def not_contains(spec: dict, reply: str, trace: Sequence[ToolTrace]) -> CheckResult:
-    whole = spec.get("whole_word", False)
-    found = [v for v in spec["values"] if _matches(reply, v, whole)]
+    found = _found(spec, reply)
     return CheckResult(describe(spec), FAIL if found else PASS,
                        f"found forbidden {found}" if found else "ok")
 
@@ -150,6 +157,32 @@ def run_check(spec: dict, reply: str, trace: Sequence[ToolTrace]) -> CheckResult
     if check is None:
         return CheckResult(describe(spec), FAIL, f"unknown check type {spec['type']!r}")
     return check(spec, reply, trace)
+
+
+# --- global invariants: applied to EVERY Clave reply in every scenario --------------------
+
+PIX_EXTRA_PHRASES = ["mais 5%", "5% a mais", "adicional de 5", "5% adicional", "5% extra",
+                     "extra de 5", "desconto extra no pix", "ainda tem 5%"]
+
+GLOBAL_CHECKS: dict[str, dict] = {
+    "no_hype": {"type": "not_contains", "whole_word": True, "values": [
+        "incrivel", "incriveis", "sensacional", "sensacionais", "espetacular", "espetaculares",
+        "fantastico", "fantastica", "fantasticos", "fantasticas", "o melhor do mercado"]},
+    "no_wrong_contact": {"type": "not_contains", "accent_sensitive": True,
+                         "values": ["3321-4500", "empóriodamusica"]},
+    "no_extra_pix_discount": {"type": "not_contains", "values": PIX_EXTRA_PHRASES},
+    "no_markdown_emphasis": {"type": "not_contains", "values": ["**"]},
+}
+
+
+def run_global_checks(reply: str, trace: Sequence[ToolTrace],
+                      checks: dict[str, dict] = GLOBAL_CHECKS) -> list[CheckResult]:
+    """Run the invariants on one reply; rows are labeled "global: <name>"."""
+    results = []
+    for name, spec in checks.items():
+        r = run_check(spec, reply, trace)
+        results.append(CheckResult(f"global: {name}", r.status, r.reason))
+    return results
 
 
 # --- LLM judge -----------------------------------------------------------------------

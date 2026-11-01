@@ -168,7 +168,7 @@ def factory(replies=REPLIES):
 
 
 def test_run_all_without_judge_skips_judge_checks():
-    results = run_all(SCENARIOS, factory(), None, Pacer(0))
+    results = run_all(SCENARIOS, factory(), None, Pacer(0), global_checks={})
     price, two = results
     assert [c.status for c in price.checks] == [PASS, PASS, SKIP]
     assert price.status == PASS
