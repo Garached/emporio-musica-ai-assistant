@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Sequence
 
 from emporio.agent import ToolTrace
+from emporio.grounding import parse_brl, prices_in  # noqa: F401 (re-exported)
 from emporio.llm.base import LLMClient, Message
 from emporio.tools import normalize
 
@@ -59,20 +60,6 @@ def _matches(text: str, value: str, whole_word: bool, accent_sensitive: bool = F
     if whole_word:
         return re.search(rf"(?<!\w){re.escape(value)}(?!\w)", text) is not None
     return value in text
-
-
-def parse_brl(raw: str) -> float:
-    """Parse a BRL amount: "1.967,18", "2.199", "1000", "439.20" -> float."""
-    if "," in raw:
-        return float(raw.replace(".", "").replace(",", "."))
-    if re.fullmatch(r"\d+\.\d{2}", raw):
-        return float(raw)
-    return float(raw.replace(".", ""))
-
-
-def prices_in(text: str) -> list[float]:
-    """All R$ amounts mentioned in a text."""
-    return [parse_brl(m) for m in re.findall(r"R\$\s?(\d[\d.]*(?:,\d{1,2})?)", text)]
 
 
 # --- checks --------------------------------------------------------------------------

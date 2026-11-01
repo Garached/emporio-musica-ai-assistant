@@ -26,6 +26,7 @@ from emporio.business_rules import (
 )
 from emporio.config import STORE_TIMEZONE, current_datetime
 from emporio.data import StoreData, load_store_data
+from emporio.grounding import format_brl
 from emporio.policies import load_policy_sections
 
 MAX_LIMIT = 20
@@ -222,11 +223,6 @@ def get_product_details(product_id: int) -> dict[str, Any]:
 
 
 PRICE_GAP_RATIO = 1.5  # alternatives this many times pricier (or cheaper) count as a big gap
-
-
-def format_brl(value: float) -> str:
-    """1967.18 -> "R$ 1.967,18"."""
-    return "R$ " + f"{value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
 def price_gap_note(price: float, alternative_prices: list[float]) -> str | None:
