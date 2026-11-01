@@ -84,3 +84,12 @@ def test_nudge_is_not_a_tool_for_eval_checks_and_shows_in_transcript():
     assert run_check({"type": "tool_called", "tool": "nudge"}, "ok", trace).status == "FAIL"
     from emporio.agent import AgentReply
     assert "- _nudge_: asked to call a tool" in format_turn("x", AgentReply("ok", trace))
+
+
+def test_dar_uma_olhada_is_nudged_and_algum_momento_is_not():
+    peek = LLMResponse(text="Deixa eu dar uma olhada nas promoções pra você!")
+    agent, _ = make_agent(peek, PROMOS, FINAL)
+    assert [t.kind for t in agent.chat("Promoções?").trace] == ["nudge", "tool"]
+    calm = LLMResponse(text="Em algum momento passe na loja para testar os instrumentos.")
+    agent2, llm2 = make_agent(calm)
+    assert agent2.chat("Oi").trace == [] and len(llm2.calls) == 1

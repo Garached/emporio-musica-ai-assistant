@@ -24,7 +24,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # make `evals` importable
 
-from emporio.agent import FALLBACK_MESSAGE, LLM_ERROR_MESSAGE, Agent, AgentReply
+from emporio.agent import LLM_ERROR_MESSAGE, Agent, AgentReply
 from emporio.grounding import format_brl, ungrounded_values
 from emporio.config import STORE_TIMEZONE, load_settings
 from emporio.llm.gemini import GeminiClient
@@ -109,14 +109,12 @@ class RecordedTurn:
 
 
 def check_reply(reply: AgentReply, grounded: list[float]) -> list[str]:
-    """Same checks as the evals: global invariants + grounding, plus fallback detection."""
+    """Same checks as the evals: global invariants (incl. "not_fallback") + grounding."""
     problems = [f"{c.label}: {c.reason}" for c in run_global_checks(reply.text, reply.trace)
                 if c.status == FAIL]
     bad = ungrounded_values(reply.text, grounded)
     if bad:
         problems.append("grounding: values not returned by tools: " + ", ".join(format_brl(v) for v in bad))
-    if reply.text == FALLBACK_MESSAGE:
-        problems.append("fallback reply sent to the customer")
     return problems
 
 

@@ -10,7 +10,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Callable, Sequence
 
-from emporio.agent import ToolTrace
+from emporio.agent import ANNOUNCE_PHRASES, FALLBACK_MESSAGE, ToolTrace
 from emporio.grounding import parse_brl, prices_in  # noqa: F401 (re-exported)
 from emporio.llm.base import LLMClient, Message
 from emporio.tools import normalize
@@ -177,6 +177,9 @@ GLOBAL_CHECKS: dict[str, dict] = {
     # There is no popularity, sales or review data, so any such claim is unsupported.
     "no_popularity_claims": {"type": "not_contains", "values": [
         "mais procurad", "muito procurad", "mais vendid", "avaliacoes", "nota dos clientes"]},
+    # The LLM judge has passed both of these before, so they are checked deterministically.
+    "not_fallback": {"type": "not_contains", "values": [FALLBACK_MESSAGE]},
+    "no_announce_phrases": {"type": "not_contains", "whole_word": True, "values": list(ANNOUNCE_PHRASES)},
 }
 
 

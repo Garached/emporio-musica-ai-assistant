@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
@@ -33,8 +34,16 @@ LLM_ERROR_MESSAGE = (
 # Announce-then-stop safeguard: phrases (normalized, accent-free) that mean "I'm about to check".
 ANNOUNCE_PHRASES = (
     "deixa eu ver", "deixe-me ver", "deixe me ver", "vou verificar", "vou consultar", "vou checar",
-    "um momento", "so um instante", "so um momento", "ja te falo",
+    "vou conferir", "deixa eu conferir", "deixa eu checar", "deixa eu dar uma olhada",
+    "deixe-me dar uma olhada", "vou dar uma olhada", "um momento", "so um instante",
+    "so um momento", "ja te falo",
 )
+
+
+def contains_announce_phrase(text: str) -> bool:
+    """Whole-word match on normalized text ("um momento" must not match "algum momento")."""
+    normalized = normalize(text)
+    return any(re.search(rf"(?<!\w){re.escape(p)}(?!\w)", normalized) for p in ANNOUNCE_PHRASES)
 NUDGE_MESSAGE = (
     "[Mensagem automática do sistema, não do cliente] Você disse que ia consultar, mas não "
     "chamou nenhuma ferramenta. Chame agora a ferramenta necessária e responda ao cliente "
@@ -257,8 +266,7 @@ class Agent:
         """
         if any(t.kind == "nudge" for t in trace) or any(t.kind == "tool" for t in trace):
             return False
-        normalized = normalize(text)
-        return any(phrase in normalized for phrase in ANNOUNCE_PHRASES)
+        return contains_announce_phrase(text)
 
     def _nudge(self, trace: list[ToolTrace], draft: str) -> None:
         """Ask the model once to actually call the tool; the customer never sees this."""

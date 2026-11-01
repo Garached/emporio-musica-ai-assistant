@@ -17,7 +17,9 @@ def test_flags_invariants_ungrounded_values_and_fallback():
     problems = check_reply(AgentReply("Opções incríveis: Giannini Cerrado por R$ 428,00!"), [599.9])
     assert any(p.startswith("global: no_hype") for p in problems)
     assert any("grounding" in p and "R$ 428,00" in p for p in problems)
-    assert check_reply(AgentReply(FALLBACK_MESSAGE), []) == ["fallback reply sent to the customer"]
+    fallback_problems = check_reply(AgentReply(FALLBACK_MESSAGE), [])
+    assert [p.split(":")[0] for p in fallback_problems] == ["global"]
+    assert fallback_problems[0].startswith("global: not_fallback")
 
 
 def test_section_lists_failures_and_safeguards():

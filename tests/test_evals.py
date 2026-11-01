@@ -286,7 +286,8 @@ def test_clean_reply_passes_all_global_checks():
         "Fale com a gente: (67) 3341-4444 ou contato@emporiodamusica.com.br.")
     assert set(statuses) == {"global: no_hype", "global: no_wrong_contact",
                              "global: no_extra_pix_discount", "global: no_markdown_emphasis",
-                             "global: no_popularity_claims"}
+                             "global: no_popularity_claims", "global: not_fallback",
+                             "global: no_announce_phrases"}
     assert set(statuses.values()) == {PASS}
 
 
@@ -303,6 +304,11 @@ def test_clean_reply_passes_all_global_checks():
         ("É um dos mais procurados por iniciantes", "global: no_popularity_claims"),
         ("Clássico muito procurado pelas avaliações", "global: no_popularity_claims"),
         ("Um dos mais vendidos da loja", "global: no_popularity_claims"),
+        ("Desculpe, não consegui concluir essa consulta agora. Pode reformular a pergunta? "
+         "Se preferir, a nossa equipe ajuda você: (67) 3341-4444 ou contato@emporiodamusica.com.br.",
+         "global: not_fallback"),
+        ("Deixa eu dar uma olhada no sistema e já te falo!", "global: no_announce_phrases"),
+        ("Só um instante que eu confiro.", "global: no_announce_phrases"),
     ],
 )
 def test_global_checks_catch_violations(reply, failing):
@@ -332,3 +338,12 @@ def test_no_scenario_relies_on_allow_not_called():
     for s in load_scenarios():
         for turn in s["turns"]:
             assert all("allow_not_called" not in c for c in turn["checks"])
+
+
+def test_fallback_invariant_matches_the_agent_message():
+    from emporio.agent import FALLBACK_MESSAGE
+    assert global_statuses(FALLBACK_MESSAGE)["global: not_fallback"] == FAIL
+
+
+def test_announce_invariant_is_whole_word():
+    assert global_statuses("Em algum momento você pode passar na loja.")["global: no_announce_phrases"] == PASS
