@@ -199,8 +199,9 @@ def main(
     runtime: tuple[AgentFactory, str] | None = None,
     console: Console | None = None,
     read_input: Callable[[], str] | None = None,
+    transcripts_dir: Path = TRANSCRIPTS_DIR,
 ) -> int:
-    """CLI entry point. `runtime`, `console` and `read_input` are injectable for tests."""
+    """CLI entry point. Keyword arguments are injectable for tests."""
     force_utf8_output()  # before argparse, so --help prints accents correctly
     args = parse_args(argv)
     console = console or Console()
@@ -212,6 +213,7 @@ def main(
     except ConfigError as exc:
         show_config_error(console, exc)
         return 1
-    session = ChatSession(factory, console, model=model, debug=args.debug)
+    session = ChatSession(factory, console, model=model, debug=args.debug,
+                          transcripts_dir=transcripts_dir)
     session.run(read_input or (lambda: console.input(PROMPT)))
     return 0
