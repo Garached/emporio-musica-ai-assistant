@@ -227,3 +227,4 @@ evals/results/*.md
 !evals/results/baseline.md
 !evals/results/after-fixes.md
 !evals/results/red-team.md
+!evals/results/final.md
