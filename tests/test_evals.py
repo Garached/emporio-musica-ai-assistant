@@ -18,6 +18,7 @@ from evals.checks import (
     parse_verdict,
     prices_in,
     run_check,
+    run_global_checks,
 )
 from evals.run_evals import (
     Pacer,
@@ -239,3 +240,53 @@ def test_tool_result_contains():
     assert check(dict(spec, allow_not_called=True), trace=TRACE) == PASS
     found = [ToolTrace("get_order_status", {}, "status=delivered", 1.0)]
     assert check(dict(spec, allow_not_called=True), trace=found) == FAIL
+
+
+# --- global invariants -----------------------------------------------------------------
+
+def global_statuses(reply):
+    return {r.label: r.status for r in run_global_checks(reply, [])}
+
+
+def test_clean_reply_passes_all_global_checks():
+    statuses = global_statuses(
+        "Temos o Yamaha C40 por R$ 599,90 (R$ 569,91 no PIX). "
+        "Fale com a gente: (67) 3341-4444 ou contato@emporiodamusica.com.br.")
+    assert set(statuses) == {"global: no_hype", "global: no_wrong_contact",
+                             "global: no_extra_pix_discount", "global: no_markdown_emphasis"}
+    assert set(statuses.values()) == {PASS}
+
+
+@pytest.mark.parametrize(
+    "reply, failing",
+    [
+        ("Separei opções incríveis pra você!", "global: no_hype"),
+        ("Um som SENSACIONAL", "global: no_hype"),
+        ("É o melhor do mercado", "global: no_hype"),
+        ("Ligue (67) 3321-4500", "global: no_wrong_contact"),
+        ("Escreva para contato@empóriodamusica.com.br", "global: no_wrong_contact"),
+        ("No PIX você ainda tem mais 5% de desconto", "global: no_extra_pix_discount"),
+        ("O **Takamine** sai por R$ 2.199,00", "global: no_markdown_emphasis"),
+    ],
+)
+def test_global_checks_catch_violations(reply, failing):
+    statuses = global_statuses(reply)
+    assert statuses[failing] == FAIL
+    assert [label for label, s in statuses.items() if s == FAIL] == [failing]
+
+
+def test_correct_email_is_not_mistaken_for_the_accented_one():
+    assert global_statuses("contato@emporiodamusica.com.br")["global: no_wrong_contact"] == PASS
+
+
+def test_hype_check_is_whole_word():
+    assert global_statuses("Isso é incrivelmente leve")["global: no_hype"] == PASS
+
+
+def test_global_checks_run_on_every_turn_including_turns_without_checks():
+    replies = dict(REPLIES, **{"pedido 8": AgentReply("Temos opções incríveis!")})
+    results = run_all(SCENARIOS, factory(replies), None, Pacer(0))
+    first_turn = results[1].turns[0]  # this turn has no scenario checks
+    assert [c.label for c in first_turn.checks if c.status == FAIL] == ["global: no_hype"]
+    assert results[1].status == FAIL
+    assert all(any(c.label.startswith("global:") for c in t.checks) for r in results for t in r.turns)
