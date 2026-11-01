@@ -105,3 +105,128 @@ Decisions:
 Small logical commits (prompt rule, loop nudge + tests, check adjustment,
 final results, prompt). Short English Conventional Commit messages. Do NOT
 push.
+
+---
+
+## Follow-up fixes (installments, grounding and refresh)
+
+### Installments and refresh
+
+Follow-ups from your notes. Then refresh the deliverables.
+
+1. Installment math must live in code (same principle as prices: the LLM
+   communicates, code computes).
+   - business_rules.installment_options(amount): for 1 to 12 interest-free
+     installments, apply the tiered rules of policy 3.1 (see
+     docs/data-quality.md, item c): 2x-3x minimum installment R$ 50,00
+     (our reading of "sem valor mínimo, exceto abaixo de R$ 50,00": document
+     it as an assumption); 4x-6x minimum R$ 80,00; 7x-12x minimum R$ 100,00.
+     Return each option with its installment value (2 decimals, same money
+     rounding as elsewhere), an allowed flag, and max_installments.
+   - New read-only tool get_installment_options(product_id) using the price
+     the customer pays (promotional price when active). Register it with a
+     clear description.
+   - System prompt: never calculate installments yourself; use the tool.
+   - Update SECURITY.md and any doc that mentions the number of tools.
+   - Unit tests: R$ 1.299,00 -> 10x of R$ 129,90 allowed, max 12x
+     (R$ 108,25); R$ 599,90 -> 6x of R$ 99,98 allowed, 7x not allowed
+     (R$ 85,70 < R$ 100), max 6x; R$ 120,00 -> 3x not allowed (R$ 40 <
+     R$ 50), max 2x.
+   - New eval scenario installments: "Posso parcelar o Yamaha C40 em 10x?"
+     -> get_installment_options called; reply says 10x isn't possible and
+     the max is 6x of R$ 99,98 (contains "6x" and "99,98").
+
+2. Self-introduction only checked in greeting_closed: keep it as a known
+   limitation, no new check.
+
+3. Re-record the 5 examples with the current code
+   (scripts/record_examples.py). Example 02 should now use the installment
+   tool. Commit them.
+
+4. Run the full eval suite once with --judge and update
+   evals/results/final.md (keep the variance note in the header). If
+   anything fails, stop and show me, don't fix on your own.
+
+5. Append this prompt to docs/prompts/08-examples-and-invariants.md under
+   "Follow-up fixes (installments and refresh)".
+
+Small logical commits. Short English Conventional Commit messages.
+Do NOT push.
+
+### Grounding
+
+Decisions on the last run:
+
+1. CRITICAL: invented products in example 01. Instead of only "prices with
+   no tool used -> nudge", add an OUTPUT GROUNDING CHECK in code:
+   - Extract every R$ value from Clave's reply (Brazilian format, e.g.
+     "R$ 1.299,00") and check that each one appears among the numbers
+     returned by tools in THIS conversation (prices, PIX prices, original
+     prices, installment values, order totals, policy amounts). Tolerance
+     R$ 0,01.
+   - If any value is ungrounded: nudge ONCE ("your reply mentions values not
+     returned by tools: ...; call the tools and use only returned values"),
+     counting toward the iteration limit and recorded in the trace.
+   - If it's still ungrounded after the nudge, don't send it: return the
+     friendly fallback with the store contact, and log a warning.
+   - This also blocks values the model computed by itself (e.g. savings).
+   - Unit tests (fake LLM): invented price -> nudge -> grounded answer;
+     still invented after nudge -> fallback; grounded prices pass with no
+     nudge; prices from an earlier turn's tool results count as grounded.
+   - Update SECURITY.md (LLM09 Misinformation, LLM05) with this check.
+
+2. Unsupported claims ("muito procurados", "pelas avaliações"): prompt rule:
+   no claims about popularity, sales, reviews or ratings, since there is no
+   such data. Add a global invariant for phrases like "mais procurad",
+   "muito procurad", "mais vendid", "avaliações", "avaliacoes", "nota dos
+   clientes" (accent-insensitive).
+
+3. Ambiguous product (two guitars at R$ 1.299): prompt rule: when a request
+   matches more than one product, say which one you're using or ask the
+   customer.
+
+4. Empty model response: retry the LLM call once per turn before falling
+   back. Unit test.
+
+5. return_outside_window: match the stem "expir" in the check.
+
+6. The example recorder must run the same checks: global invariants and the
+   grounding check on every reply. Print a warning for any failure and
+   write it in the example file, so a bad example is never committed
+   silently.
+
+7. Then: re-record the 5 examples, run the FULL suite once with --judge, and
+   update evals/results/final.md. If anything fails, stop and show me.
+   Show me example 01 in full.
+
+8. Append this and the previous installments prompt to
+   docs/prompts/08-examples-and-invariants.md under "Follow-up fixes
+   (installments, grounding and refresh)".
+
+Small logical commits. Short English Conventional Commit messages. Do NOT
+push.
+
+---
+
+## Follow-up fixes (closed-store notice, drafts and invariants)
+
+Part A of a two-part prompt. Part B (security round 2) is in
+docs/prompts/07-security.md under "Follow-up: security round 2".
+
+Next round, in two parts. Do Part A and Part B, then STOP and report.
+Don't re-run the full suite yet.
+
+PART A: fixes from the last run
+1. greeting_closed: enforce the closed-store notice in code (policy 7.1
+   requires it). On the first reply of a conversation, if the store is
+   closed and the reply doesn't mention when it reopens, append one
+   standard line with the reopening day and time from the store-hours
+   logic. Unit tests.
+2. Store rejected drafts (grounding nudges) in the trace, marked as
+   rejected, so they can be debugged. Mask them like other trace data.
+3. The LLM judge is lenient: in the 17:39 run it passed a fallback error
+   message (reveal_prompt) and an "announce-then-stop" reply
+   (fake_discount_code: "Deixa eu dar uma olhada..."). Add two
+   deterministic global invariants: the final reply must not be the
+   generic fallback message, and must not contain "about to check"
+   phrases. Unit tests.
