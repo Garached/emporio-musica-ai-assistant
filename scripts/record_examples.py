@@ -4,6 +4,11 @@ Each conversation runs in a fresh Agent (optional simulated "today"). Replies
 are written unedited; tool calls are listed below each reply with phone digits
 masked, as in the transcripts.
 
+Every reply goes through the same checks as the evals: the global invariants and
+the output grounding check (every R$ value must come from a tool). Failures are
+printed as warnings, written into the example file, and make the script exit
+with code 1, so a bad example is never committed silently.
+
 Usage:
     python scripts/record_examples.py [--only 01,04] [--delay SECONDS]
 """
@@ -19,10 +24,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # make `evals` importable
 
-from emporio.agent import LLM_ERROR_MESSAGE, Agent, AgentReply
+from emporio.agent import FALLBACK_MESSAGE, LLM_ERROR_MESSAGE, Agent, AgentReply
+from emporio.grounding import format_brl, ungrounded_values
 from emporio.config import STORE_TIMEZONE, load_settings
 from emporio.llm.gemini import GeminiClient
 from emporio.transcript import format_turn
+from evals.checks import FAIL, run_global_checks
 from evals.run_evals import Pacer, scenario_today
 
 EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "examples"
@@ -94,8 +101,27 @@ def header(conv: Conversation, model: str, generated: datetime) -> str:
     return "\n".join(lines)
 
 
-def record(conv: Conversation, agent: Agent, pace: Pacer) -> list[tuple[str, AgentReply]]:
-    """Run one conversation. Raises RuntimeError if the model stops answering."""
+@dataclass
+class RecordedTurn:
+    message: str
+    reply: AgentReply
+    problems: list[str]
+
+
+def check_reply(reply: AgentReply, grounded: list[float]) -> list[str]:
+    """Same checks as the evals: global invariants + grounding, plus fallback detection."""
+    problems = [f"{c.label}: {c.reason}" for c in run_global_checks(reply.text, reply.trace)
+                if c.status == FAIL]
+    bad = ungrounded_values(reply.text, grounded)
+    if bad:
+        problems.append("grounding: values not returned by tools: " + ", ".join(format_brl(v) for v in bad))
+    if reply.text == FALLBACK_MESSAGE:
+        problems.append("fallback reply sent to the customer")
+    return problems
+
+
+def record(conv: Conversation, agent: Agent, pace: Pacer) -> list[RecordedTurn]:
+    """Run one conversation, checking every reply. Raises RuntimeError if the model stops answering."""
     turns = []
     with scenario_today(conv.today):
         for message in conv.turns:
@@ -103,12 +129,32 @@ def record(conv: Conversation, agent: Agent, pace: Pacer) -> list[tuple[str, Age
             reply = agent.chat(message)
             if reply.text == LLM_ERROR_MESSAGE:
                 raise RuntimeError(f"LLM unavailable while recording {conv.number}; not saved.")
-            turns.append((message, reply))
+            turns.append(RecordedTurn(message, reply, check_reply(reply, agent.grounded_values)))
     return turns
 
 
-def render(conv: Conversation, turns: list[tuple[str, AgentReply]], model: str, generated: datetime) -> str:
-    return header(conv, model, generated) + "".join(format_turn(m, r) for m, r in turns)
+def checks_section(turns: list[RecordedTurn]) -> str:
+    """Automatic verification summary written at the end of each example."""
+    lines = ["## Verificação automática", "",
+             "Feita pelo script em cada resposta: invariantes globais das evals (sem exageros, "
+             "contato correto, sem PIX extra em promoção, sem markdown, sem alegações de "
+             "popularidade) e checagem de grounding (todo valor em R$ veio de uma ferramenta).", ""]
+    problems = [(i, p) for i, t in enumerate(turns, 1) for p in t.problems]
+    if problems:
+        lines.append(f"- ⚠️ {len(problems)} falha(s):")
+        lines += [f"  - Turno {i}: {p}" for i, p in problems]
+    else:
+        lines.append("- ✅ Nenhuma falha.")
+    safeguards = [(i, t) for i, turn in enumerate(turns, 1) for t in turn.reply.trace if t.kind != "tool"]
+    if safeguards:
+        lines.append("- Salvaguardas acionadas (a resposta final foi corrigida antes de chegar ao cliente):")
+        lines += [f"  - Turno {i}: {t.kind}: {t.summary}" for i, t in safeguards]
+    return "\n".join(lines) + "\n"
+
+
+def render(conv: Conversation, turns: list[RecordedTurn], model: str, generated: datetime) -> str:
+    body = "".join(format_turn(t.message, t.reply) for t in turns)
+    return header(conv, model, generated) + body + checks_section(turns)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -125,6 +171,7 @@ def main(argv: list[str] | None = None) -> int:
     pace = Pacer(args.delay)
     EXAMPLES_DIR.mkdir(exist_ok=True)
 
+    failed = False
     for conv in CONVERSATIONS:
         if wanted and conv.number not in wanted:
             continue
@@ -133,9 +180,15 @@ def main(argv: list[str] | None = None) -> int:
         path = EXAMPLES_DIR / f"{conv.number}-{conv.slug}.md"
         path.write_text(render(conv, turns, settings.gemini_model, datetime.now(STORE_TIMEZONE)),
                         encoding="utf-8")
-        tools = sorted({t.name for _, r in turns for t in r.trace if t.kind == "tool"})
+        tools = sorted({t.name for turn in turns for t in turn.reply.trace if t.kind == "tool"})
         print(f"  saved {path.name} | tools: {', '.join(tools) or 'none'}")
-    return 0
+        for i, turn in enumerate(turns, 1):
+            for problem in turn.problems:
+                failed = True
+                print(f"  WARNING turn {i}: {problem}")
+    if failed:
+        print("Some examples failed the automatic checks (see warnings and the files). Don't commit them as-is.")
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":
