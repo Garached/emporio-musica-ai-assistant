@@ -91,7 +91,7 @@
         "checks": [
           {"type": "contains_any", "values": ["descontinuad", "nao faz mais parte", "fora de linha", "nao esta mais", "saiu de linha"]},
           {"type": "not_contains", "values": ["13 unidades", "temos em estoque", "tenho em estoque"]},
-          {"type": "contains_any", "values": ["Bass 1X", "Bass 3X", "Bass 4X"]},
+          {"type": "contains_any", "values": ["Bass 1X", "Bass 3X", "Bass 4X", "alternativ", "opções", "opcoes"]},
           {"type": "judge", "criterion": "The reply explains that the requested product (Ibanez Bass 2X) was discontinued, and if it suggests alternatives that cost much more, it is transparent about the big price difference."}
         ]
       }
