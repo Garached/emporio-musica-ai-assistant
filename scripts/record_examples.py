@@ -25,6 +25,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # make `evals` importable
 
 from emporio.agent import LLM_ERROR_MESSAGE, Agent, AgentReply
+from emporio.contact_filter import official_values, unofficial_contacts
 from emporio.grounding import format_brl, ungrounded_values
 from emporio.config import STORE_TIMEZONE, load_settings
 from emporio.llm.gemini import GeminiClient
@@ -108,13 +109,16 @@ class RecordedTurn:
     problems: list[str]
 
 
-def check_reply(reply: AgentReply, grounded: list[float]) -> list[str]:
-    """Same checks as the evals: global invariants (incl. "not_fallback") + grounding."""
+def check_reply(reply: AgentReply, grounded: list[float], allowed_contacts: set[str] | None = None) -> list[str]:
+    """Same checks as the evals and the agent: global invariants, grounding and contact filter."""
     problems = [f"{c.label}: {c.reason}" for c in run_global_checks(reply.text, reply.trace)
                 if c.status == FAIL]
     bad = ungrounded_values(reply.text, grounded)
     if bad:
         problems.append("grounding: values not returned by tools: " + ", ".join(format_brl(v) for v in bad))
+    contacts = unofficial_contacts(reply.text, allowed_contacts or official_values())
+    if contacts:
+        problems.append("contact: unofficial contact/payment details: " + ", ".join(contacts))
     return problems
 
 
@@ -127,7 +131,8 @@ def record(conv: Conversation, agent: Agent, pace: Pacer) -> list[RecordedTurn]:
             reply = agent.chat(message)
             if reply.text == LLM_ERROR_MESSAGE:
                 raise RuntimeError(f"LLM unavailable while recording {conv.number}; not saved.")
-            turns.append(RecordedTurn(message, reply, check_reply(reply, agent.grounded_values)))
+            turns.append(RecordedTurn(message, reply,
+                                       check_reply(reply, agent.grounded_values, agent.contact_allowed)))
     return turns
 
 
@@ -136,7 +141,8 @@ def checks_section(turns: list[RecordedTurn]) -> str:
     lines = ["## Verificação automática", "",
              "Feita pelo script em cada resposta: invariantes globais das evals (sem exageros, "
              "contato correto, sem PIX extra em promoção, sem markdown, sem alegações de "
-             "popularidade) e checagem de grounding (todo valor em R$ veio de uma ferramenta).", ""]
+             "popularidade), checagem de grounding (todo valor em R$ veio de uma ferramenta) e filtro "
+             "de contatos (nenhum contato, link ou dado de pagamento não oficial).", ""]
     problems = [(i, p) for i, t in enumerate(turns, 1) for p in t.problems]
     if problems:
         lines.append(f"- ⚠️ {len(problems)} falha(s):")
