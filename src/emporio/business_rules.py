@@ -148,3 +148,56 @@ def return_eligibility(
         regret_7_days=_window(delivered, REGRET_WINDOW_DAYS, today),
         defect_exchange_30_days=_window(order_date, DEFECT_EXCHANGE_DAYS, today),
     )
+
+
+# --- installments (policy 3.1) ---------------------------------------------------------
+
+MAX_INSTALLMENTS = 12
+# (from, to, minimum installment in BRL), from policy 3.1 (see docs/data-quality.md, item c).
+# Assumption: "até 3x sem valor mínimo, exceto abaixo de R$ 50,00" is read as a R$ 50,00
+# minimum installment for 2x-3x. 1x (a single card payment) has no minimum.
+INSTALLMENT_TIERS = ((2, 3, 50.0), (4, 6, 80.0), (7, 12, 100.0))
+
+
+@dataclass(frozen=True)
+class InstallmentOption:
+    """One interest-free option: N installments of `value`, allowed or not."""
+
+    installments: int
+    value: float
+    allowed: bool
+    minimum: float
+
+
+@dataclass(frozen=True)
+class InstallmentPlan:
+    """All 1x-12x options for an amount, plus the largest allowed number of installments."""
+
+    amount: float
+    options: list[InstallmentOption]
+    max_installments: int
+
+
+def minimum_installment(installments: int) -> float:
+    """Minimum installment value for N installments (0 for 1x)."""
+    for low, high, minimum in INSTALLMENT_TIERS:
+        if low <= installments <= high:
+            return minimum
+    return 0.0
+
+
+def installment_options(amount: float) -> InstallmentPlan:
+    """Interest-free credit card options from 1x to 12x, using the tiered rules of 3.1.
+
+    Each installment is the amount divided by N, rounded half-up to cents (the value
+    shown to the customer); an option is allowed when that value reaches the tier's
+    minimum.
+    """
+    total = Decimal(str(amount))
+    options = []
+    for n in range(1, MAX_INSTALLMENTS + 1):
+        value = _to_cents(total / n)
+        minimum = minimum_installment(n)
+        options.append(InstallmentOption(n, value, value >= minimum, minimum))
+    max_allowed = max(o.installments for o in options if o.allowed)
+    return InstallmentPlan(round_money(amount), options, max_allowed)

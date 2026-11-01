@@ -7,7 +7,9 @@ from emporio.business_rules import (
     active_promotion,
     availability_label,
     final_price,
+    installment_options,
     is_purchasable,
+    minimum_installment,
     round_money,
 )
 from emporio.data import load_store_data
@@ -100,3 +102,35 @@ def test_final_price_without_promotion_gives_pix_discount(store):
 def test_money_rounding_is_half_up():
     assert round_money(2.675) == 2.68
     assert final_price({"price_brl": 799.9}, None).pix_price == 759.91  # 759.905
+
+
+# --- installments (policy 3.1) -----------------------------------------------------------
+
+def _option(plan, n):
+    return next(o for o in plan.options if o.installments == n)
+
+
+def test_installments_1299():
+    plan = installment_options(1299.00)
+    assert (_option(plan, 10).value, _option(plan, 10).allowed) == (129.90, True)
+    assert plan.max_installments == 12
+    assert _option(plan, 12).value == 108.25
+
+
+def test_installments_599_90():
+    plan = installment_options(599.90)
+    assert (_option(plan, 6).value, _option(plan, 6).allowed) == (99.98, True)
+    assert (_option(plan, 7).value, _option(plan, 7).allowed) == (85.70, False)  # < R$ 100
+    assert plan.max_installments == 6
+
+
+def test_installments_120():
+    plan = installment_options(120.00)
+    assert (_option(plan, 3).value, _option(plan, 3).allowed) == (40.00, False)  # < R$ 50
+    assert plan.max_installments == 2
+
+
+def test_installment_tiers_and_single_payment():
+    assert [minimum_installment(n) for n in (1, 2, 3, 4, 6, 7, 12)] == [0, 50, 50, 80, 80, 100, 100]
+    plan = installment_options(30.00)
+    assert plan.max_installments == 1 and len(plan.options) == 12
