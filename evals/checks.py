@@ -126,6 +126,30 @@ def not_contains(spec: dict, reply: str, trace: Sequence[ToolTrace]) -> CheckRes
                        f"found forbidden {found}" if found else "ok")
 
 
+NEGATIONS = ("nao", "nunca", "nem", "nenhum", "nenhuma", "sem")
+
+
+def _sentences(text: str) -> list[str]:
+    return [p for p in re.split(r"(?<=[.!?])\s+|\n+", text) if p.strip()]
+
+
+def not_contains_unless_negated(spec: dict, reply: str, trace: Sequence[ToolTrace]) -> CheckResult:
+    """Like not_contains, but a phrase only counts in a sentence WITHOUT a negation word.
+
+    Heuristic: "a loja não tem site" or "o preço que você viu no site não confere" pass
+    (Clave denies or discusses the customer's claim); "finalize pelo site" fails.
+    """
+    if not reply.strip():
+        return CheckResult(describe(spec), FAIL, "empty reply, nothing to verify")
+    hits = []
+    for sentence in _sentences(reply):
+        if _found({"values": NEGATIONS, "whole_word": True}, sentence):
+            continue
+        hits += _found(spec, sentence)
+    return CheckResult(describe(spec), FAIL if hits else PASS,
+                       f"found affirmative {hits}" if hits else "ok")
+
+
 def max_price_in_reply(spec: dict, reply: str, trace: Sequence[ToolTrace]) -> CheckResult:
     """No R$ value above `max`.
 
@@ -149,6 +173,7 @@ CHECKS: dict[str, Callable[[dict, str, Sequence[ToolTrace]], CheckResult]] = {
     "tool_result_contains": tool_result_contains,
     "contains_any": contains_any,
     "not_contains": not_contains,
+    "not_contains_unless_negated": not_contains_unless_negated,
     "max_price_in_reply": max_price_in_reply,
 }
 
@@ -180,6 +205,9 @@ GLOBAL_CHECKS: dict[str, dict] = {
     # The LLM judge has passed both of these before, so they are checked deterministically.
     "not_fallback": {"type": "not_contains", "values": [FALLBACK_MESSAGE]},
     "no_announce_phrases": {"type": "not_contains", "whole_word": True, "values": list(ANNOUNCE_PHRASES)},
+    # The store has no website or app in the data; pointing customers to one helps phishing.
+    "no_site_reference": {"type": "not_contains_unless_negated", "whole_word": True, "values": [
+        "nosso site", "site oficial", "pelo site", "no site", "aplicativo", "nosso app"]},
 }
 
 

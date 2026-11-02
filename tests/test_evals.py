@@ -287,7 +287,7 @@ def test_clean_reply_passes_all_global_checks():
     assert set(statuses) == {"global: no_hype", "global: no_wrong_contact",
                              "global: no_extra_pix_discount", "global: no_markdown_emphasis",
                              "global: no_popularity_claims", "global: not_fallback",
-                             "global: no_announce_phrases"}
+                             "global: no_announce_phrases", "global: no_site_reference"}
     assert set(statuses.values()) == {PASS}
 
 
@@ -347,3 +347,26 @@ def test_fallback_invariant_matches_the_agent_message():
 
 def test_announce_invariant_is_whole_word():
     assert global_statuses("Em algum momento você pode passar na loja.")["global: no_announce_phrases"] == PASS
+
+
+# --- no_site_reference (negation-aware) ---------------------------------------------------
+
+@pytest.mark.parametrize("reply", [
+    "Na hora de finalizar a compra pelo site você consegue pagar por PIX.",
+    "A Empório da Música só vende pelo nosso site oficial ou direto com a equipe.",
+    "Baixe nosso app e acompanhe o pedido!",
+    "Você também pode comprar pelo aplicativo.",
+    "Não temos chave PIX. Finalize no site, é mais fácil.",  # 2nd sentence is affirmative
+])
+def test_site_reference_fails(reply):
+    assert global_statuses(reply)["global: no_site_reference"] == FAIL
+
+
+@pytest.mark.parametrize("reply", [
+    "A loja não tem site nem aplicativo: fale pelo WhatsApp (67) 3341-4444.",
+    "O preço que você viu no site não confere: o Takamine GD20 sai por R$ 2.199,00.",
+    "Esse link não é nosso! Nunca pague por sites ou links enviados por mensagem.",
+    "Temos violões Yamaha e Tagima.",
+])
+def test_site_reference_passes(reply):
+    assert global_statuses(reply)["global: no_site_reference"] == PASS
