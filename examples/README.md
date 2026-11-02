@@ -24,3 +24,6 @@ python scripts/record_examples.py --delay 6    # slower pacing for the free tier
 
 This needs `GEMINI_API_KEY` in `.env`. Each run overwrites the files, and replies vary
 between runs because the model is not deterministic.
+
+Each file ends with a "Review notes" section, added by hand after recording and clearly
+separated from the unedited conversation. Regenerating a file removes its review notes.
