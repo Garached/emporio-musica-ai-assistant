@@ -142,9 +142,12 @@ def not_contains_unless_negated(spec: dict, reply: str, trace: Sequence[ToolTrac
     if not reply.strip():
         return CheckResult(describe(spec), FAIL, "empty reply, nothing to verify")
     hits = []
+    exempt = spec.get("except_with", [])
     for sentence in _sentences(reply):
         if _found({"values": NEGATIONS, "whole_word": True}, sentence):
             continue
+        if exempt and _found({"values": exempt, "whole_word": True}, sentence):
+            continue  # e.g. the Correios/Jadlog tracking sites named in policy 5.3
         hits += _found(spec, sentence)
     return CheckResult(describe(spec), FAIL if hits else PASS,
                        f"found affirmative {hits}" if hits else "ok")
@@ -206,7 +209,9 @@ GLOBAL_CHECKS: dict[str, dict] = {
     "not_fallback": {"type": "not_contains", "values": [FALLBACK_MESSAGE]},
     "no_announce_phrases": {"type": "not_contains", "whole_word": True, "values": list(ANNOUNCE_PHRASES)},
     # The store has no website or app in the data; pointing customers to one helps phishing.
-    "no_site_reference": {"type": "not_contains_unless_negated", "whole_word": True, "values": [
+    # Carrier tracking sites (policy 5.3: "no site dos Correios ou da Jadlog") are legitimate.
+    "no_site_reference": {"type": "not_contains_unless_negated", "whole_word": True,
+                          "except_with": ["correios", "jadlog"], "values": [
         "nosso site", "site oficial", "pelo site", "no site", "aplicativo", "nosso app"]},
 }
 

@@ -367,6 +367,8 @@ def test_site_reference_fails(reply):
     "O preço que você viu no site não confere: o Takamine GD20 sai por R$ 2.199,00.",
     "Esse link não é nosso! Nunca pague por sites ou links enviados por mensagem.",
     "Temos violões Yamaha e Tagima.",
+    "Seu pedido foi enviado! Rastreio BRJL5544332BR: acompanhe no site dos Correios.",  # policy 5.3
+    "O rastreamento pode ser consultado no site da Jadlog.",
 ])
 def test_site_reference_passes(reply):
     assert global_statuses(reply)["global: no_site_reference"] == PASS
