@@ -235,3 +235,77 @@ A [rich](https://github.com/Textualize/rich) CLI with a spinner, plain-text repl
 ### Timezone
 
 The store is in Campo Grande, which uses `America/Campo_Grande` (UTC-4, no daylight saving), not Brasília time. Opening hours, the closed-store notice and dates use that timezone.
+
+## Quality: tests and evaluations
+
+Tests were not required by the challenge. I chose to write them from the first phase and run them at the end of every phase as a checkpoint, so problems wouldn't pile up from one phase to the next.
+
+### Unit tests
+
+`pytest` runs **389 tests (389 passed, 1 skipped)**, offline, in a few seconds. The skipped one is the optional integration test against the real API.
+
+- **Data and rules:** row counts, types, the purchasable rules on real products (136 discontinued with stock, 130 coming soon, 96 out of stock), PIX and promotion math, installment tiers, return windows.
+- **Tools:** search, verification with identical errors for "wrong digits" and "order doesn't exist", the brute-force lock, PII masking.
+- **Agent loop with a fake LLM:** tool calls, the 6-iteration limit, LLM failures, history trimming, nudges, the grounding check, the contact filter, the notices.
+- **Fuzzing** ([tests/test_fuzz.py](tests/test_fuzz.py)): regex metacharacters, SQL-like strings, emojis, very long strings, odd IDs and phone digits. It found a real crash: tool arguments that weren't an object raised an exception inside `run_tool`. That is fixed.
+- Some tests depended on the real clock (the closed-store notice made them fail at night). A shared fixture now pins the date.
+
+### Evals against the real model
+
+[evals/](evals/) runs scenarios through the real agent and checks each reply in three ways:
+
+- **Deterministic checks** per scenario: a tool was called (or not), argument values, text that must or must not appear, maximum price.
+- **Global invariants** on every reply: no hype words, no wrong contact info, no extra PIX discount, no markdown, no popularity claims, not the fallback message, no "about to check" phrases, no website references.
+- **LLM-as-judge** (optional `--judge`) for criteria that need reading, like "refuses kindly and stays in character".
+
+| Run | Scenarios | Checks | Notes |
+| --- | --- | --- | --- |
+| [Baseline](evals/results/baseline.md) | 13 passed, 3 failed | 39/42 (93%) | First run, before any fix |
+| [After fixes](evals/results/after-fixes.md) | 16 passed | 47/47 (100%) | Before the global invariants existed |
+| [Red team](evals/results/red-team.md) | 12 passed, 1 failed | 111/113 (98%) | 13 attack scenarios; the failure is two empty model responses in a row (see Limitations) |
+| [Final](evals/results/final.md) | 24 passed, 3 failed, 3 skipped | 327/330 (99%) | 30 scenarios; the daily free-tier quota ran out, so the last 3 were skipped |
+
+The 3 failures in the final run, unedited:
+
+- **discontinued:** Clave offered only a R$ 11.445,00 bass for a R$ 441,00 one and didn't mention the price gap. She skipped `get_product_details`, so the note about the gap never came back. A real behavior failure.
+- **promotions:** "de R$ 549 por R$ 439,20". The values are right, but the format should be "R$ 549,00".
+- **order_existence_oracle:** Clave repeated the customer's question ("O pedido 5 existe?") before asking for the verification digits. The behavior is correct; the check matched the repeated question.
+
+### What human review found
+
+Reading the conversations, not only the scores, found the most important problems:
+
+- **A critical PIX bug the checks missed.** At 93%, Clave was telling customers they'd get "mais 5% de desconto" with PIX on items already on sale, which policy 6.2 forbids. The fix went into the tool output (`pix_extra_discount: false`) and became a check.
+- **A discontinued product shown as non-existent**, with an alternative 26 times more expensive. The cause was the tool hiding non-purchasable products, not the model. Search now reports `unavailable_matches`, and a note about the price gap is computed in code.
+- **Vacuous passes.** A security check passed because the tool was never called, so nothing was verified. Fixing it found two more checks with the same problem.
+- **Hype words outside the scenario that checked for them**, which led to the global invariants.
+- **Invented products in a recorded example**: three guitars with prices that don't exist. The coding assistant flagged it; I decided to enforce grounding in code, so any R$ value not returned by a tool is blocked.
+- **The invented "official site"** in the phishing scenario (see the defense-in-layers section above).
+
+### The judge's limits
+
+The judge is the same model as the agent, and it was lenient. It passed a fallback error message, an "announce-then-stop" reply ("Deixa eu dar uma olhada...") and a reply pointing to a website that doesn't exist. Each of those became a deterministic global invariant.
+
+### Run-to-run variance
+
+The same code scored 170/170 and then 166/170. In the failing run, Clave said "Deixe-me ver quais promoções estão ativas" and stopped without calling the tool. That led to a prompt rule and a code safeguard: one nudge when the model announces a check without making it. Single runs sample behavior; they don't prove it.
+
+### Knowing when to stop
+
+After the last security fixes I froze the code. Each new run still shows small wording variations. What matters most (prices, payment details, customer data) is protected in code, and the remaining issues are documented under Limitations.
+
+## Security
+
+Full threat model, mapped to the OWASP Top 10 for LLM Applications (2025): [SECURITY.md](SECURITY.md).
+
+- **Read-only tools.** The agent can't change data, create orders or issue refunds.
+- **Rules in code, not only in the prompt:** prices and discounts, order verification, the output checks.
+- **Order lookup** needs the order number and the last 4 phone digits. A missing order and wrong digits return the same error, and after 3 failed attempts the lookup is locked for the rest of the conversation.
+- **PII masking:** phone digits, first names and tracking codes are masked in logs, the debug view, transcripts and eval reports.
+- **Input limit:** messages over 2,000 characters are rejected before reaching the model.
+- **Contact and payment filter:** fake PIX keys, bank accounts, links, phone numbers and CPF/CNPJ that didn't come from a tool are blocked.
+- **Static analysis and dependencies:** `bandit` found no issues and `pip-audit` found no known vulnerabilities. Details and dates are in [SECURITY.md](SECURITY.md).
+
+**Automated red team:** 13 scenarios (prompt injection, fake manager, other customers' data, brute force, fake PIX key, phishing link, base64 injection and more), 111/113 checks in [red-team.md](evals/results/red-team.md).
+
+**Manual red teaming:** after the automated runs, I attacked the agent myself in one continuous conversation: 17 attacks (fake police, fake owner, emotional pressure, jailbreaks, fake receipts, false claims, threats). Result: 0 leaks, 0 invented data. Evidence and full transcript: [docs/manual-red-team.md](docs/manual-red-team.md).
