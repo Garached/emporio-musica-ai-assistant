@@ -309,3 +309,55 @@ Full threat model, mapped to the OWASP Top 10 for LLM Applications (2025): [SECU
 **Automated red team:** 13 scenarios (prompt injection, fake manager, other customers' data, brute force, fake PIX key, phishing link, base64 injection and more), 111/113 checks in [red-team.md](evals/results/red-team.md).
 
 **Manual red teaming:** after the automated runs, I attacked the agent myself in one continuous conversation: 17 attacks (fake police, fake owner, emotional pressure, jailbreaks, fake receipts, false claims, threats). Result: 0 leaks, 0 invented data. Evidence and full transcript: [docs/manual-red-team.md](docs/manual-red-team.md).
+
+## Example conversations
+
+Five multi-turn conversations recorded with the real model. They are in Portuguese and unedited. Each file lists the tool calls under every reply, the result of the automatic checks, and review notes.
+
+| File | Scenario | What it shows |
+| --- | --- | --- |
+| [01-catalogo-violoes.md](examples/01-catalogo-violoes.md) | Beginner looking for a guitar up to R$ 1.000 | Price and category filters, refining by nylon, product details, installments and PIX price from tools |
+| [02-informacoes-loja.md](examples/02-informacoes-loja.md) | Store information | Address, Saturday hours, installments for a R$ 1.299 guitar (the product is named, since two cost the same) |
+| [03-preco-promocao-descontinuado.md](examples/03-preco-promocao-descontinuado.md) | Price, promotions, discontinued item | Catalog price, promotions with original price and discount, discontinued bass with the price gap stated |
+| [04-devolucao-dentro-do-prazo.md](examples/04-devolucao-dentro-do-prazo.md) | Return within the 7-day window (simulated date 2026-02-20) | Policy, identity check, order lookup, deadline from the delivery forecast, handoff to the store |
+| [05-fora-do-escopo-e-seguranca.md](examples/05-fora-do-escopo-e-seguranca.md) | Out of scope and security | Accessories, off-topic question, prompt injection, order lookup with wrong digits |
+
+To regenerate: `python scripts/record_examples.py` (or `--only 04`). The script runs the same checks as the evals on every reply and exits with an error if any fails. Regenerating overwrites the files, including the review notes. More in [examples/README.md](examples/README.md).
+
+## Assumptions
+
+- **The data is a snapshot** from early 2026. Order statuses are reported as stored. Use `--today` to simulate a date.
+- **All orders are treated as online purchases**, since the data has no sales channel. The 7-day regret right (policy 4.1) applies to online purchases.
+- **`estimated_delivery` is used as the delivery date** for the return window, since the data has no real delivery date. Clave says so and suggests confirming with the store.
+- **Order status labels** are my reading of the codes: pending = aguardando confirmação do pagamento, confirmed = pagamento confirmado, em separação, shipped = enviado, delivered = entregue, cancelled = cancelado.
+- **Contact info:** (67) 3341-4444 and contato@emporiodamusica.com.br (see Data treatment).
+- **Installments:** "até 3x sem valor mínimo, exceto abaixo de R$ 50,00" is read as a R$ 50,00 minimum installment for 2x-3x.
+- **No partner stores:** the manual says to suggest partner stores for accessories, but there's no list, so Clave doesn't name any.
+- **No website or app** in the data. The official channels are the phone/WhatsApp, the e-mail and the store address.
+- **Holidays** are not in the data, so the opening-hours logic doesn't know them. Clave mentions this when relevant.
+
+## Known limitations and next steps
+
+### Limitations
+
+- **Model variance and single runs.** Each eval scenario ran once per run. The same code can pass or fail a scenario on different runs, as the final run shows.
+- **The judge is the same model as the agent**, and it has been lenient. The most important criteria were moved to deterministic checks.
+- **Small hallucinations remain** in wording: for example, telling a fake manager about an "internal system", or assumptions about the store's process ("o envio de chaves PIX é feito exclusivamente pela nossa equipe"), or "durabilidade" in a product description.
+- **Empty model responses** happen now and then. The agent retries once, then sends the fallback. That is the red-team failure: `phishing_link` got two empty responses in a row. A diagnostic call with the same message right after got a normal, correct reply.
+- **Self-introduction** on the first reply is only checked in one scenario, and Clave sometimes skips it.
+- **Heuristics:** the announce-then-stop nudge, the official-channels line on payment messages and the `no_site_reference` check use keyword lists. They can miss other wordings. The payment line also fires on PIX price questions, which adds a redundant line.
+- **The output checks cover R$ values and contact/payment details only.** A wrong product name, spec or process detail without a price is not caught in code.
+- **Lines added by code are not saved to the history**, so the model doesn't know the customer saw them. This can repeat information (the phone number shown twice in the manual red team).
+- **4-digit verification is weak**, and the brute-force lock is per conversation: a new conversation resets it.
+- **Free tier:** on the free tier, Google may use the conversations to improve its models.
+- **CLI only**, no real handoff or ticketing for complaints and returns, and no holiday calendar.
+
+### With more time
+
+- Run each eval scenario several times and report pass rates instead of single results.
+- Use a different model as the judge.
+- Run tests and a small eval set in CI.
+- A web or WhatsApp interface.
+- Real customer authentication (a one-time code to the registered phone) and server-side rate limiting per user and IP.
+- A lock file with pinned, hashed dependencies.
+- Create tickets for complaints and returns instead of only handing off to the store contact.
