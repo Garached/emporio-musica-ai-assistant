@@ -58,3 +58,14 @@ Ferramentas usadas:
 Feita pelo script em cada resposta: invariantes globais das evals (sem exageros, contato correto, sem PIX extra em promoção, sem markdown, sem alegações de popularidade), checagem de grounding (todo valor em R$ veio de uma ferramenta) e filtro de contatos (nenhum contato, link ou dado de pagamento não oficial).
 
 - ✅ Nenhuma falha.
+
+---
+
+<!-- review notes: to be confirmed by Gabriela -->
+## Review notes
+
+Added after recording, separate from the unedited conversation above. Comparison with the catalog and the policy.
+
+- Turn 1: R$ 2.199,00 / R$ 2.089,05 PIX and 12x of R$ 183,25 match the catalog and the installment tool. Clave does not introduce herself on the first reply (a known limitation).
+- Turn 2: the four active promotions, original prices, discounts and promotional prices match the data. No extra PIX discount is promised.
+- Turn 3: correct that the Ibanez Bass 2X is discontinued, and the price range of the alternatives (R$ 7.157,00 to R$ 11.445,00) is right. Clave gives the range but does not name the three basses; she asks first.

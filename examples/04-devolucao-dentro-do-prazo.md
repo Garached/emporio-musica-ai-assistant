@@ -49,3 +49,14 @@ Lembrando que o produto precisa estar na embalagem original, sem sinais de uso e
 Feita pelo script em cada resposta: invariantes globais das evals (sem exageros, contato correto, sem PIX extra em promoção, sem markdown, sem alegações de popularidade), checagem de grounding (todo valor em R$ veio de uma ferramenta) e filtro de contatos (nenhum contato, link ou dado de pagamento não oficial).
 
 - ✅ Nenhuma falha.
+
+---
+
+<!-- review notes: to be confirmed by Gabriela -->
+## Review notes
+
+Added after recording, separate from the unedited conversation above. Comparison with the data and the policy.
+
+- Turn 1: Clave does not introduce herself as the virtual assistant on the first reply (a known limitation). The general rule she states (7 calendar days after receipt, for online purchases, original packaging, no signs of use) matches policy 4.1.
+- Turn 2: order 7 is the Shelby SU-21S Soprano Sunburst ukulele, delivered; the deadline 24/02/2026 is 7 days after the estimated delivery (17/02/2026), and Clave says it is based on the forecast.
+- Turn 3: correct handoff to the official channels. It leaves out two details of policy 4.1 that would help the customer: the store pays the return shipping, and the refund is made within 10 business days.

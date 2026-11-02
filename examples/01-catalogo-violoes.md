@@ -74,3 +74,15 @@ Para pagamentos, use só os canais oficiais da loja: WhatsApp/telefone (67) 3341
 Feita pelo script em cada resposta: invariantes globais das evals (sem exageros, contato correto, sem PIX extra em promoção, sem markdown, sem alegações de popularidade), checagem de grounding (todo valor em R$ veio de uma ferramenta) e filtro de contatos (nenhum contato, link ou dado de pagamento não oficial).
 
 - ✅ Nenhuma falha.
+
+---
+
+<!-- review notes: to be confirmed by Gabriela -->
+## Review notes
+
+Added after recording, separate from the unedited conversation above. Comparison with the catalog and the policy.
+
+- Turn 3: "muito recomendado para quem está começando pela sonoridade e durabilidade". The catalog says "Ideal para estudantes e iniciantes, com excelente projeção sonora". Durability is not in the data.
+- Turn 3: specs and prices match the catalog (Spruce, Meranti, Nato, 650mm, no electronics; R$ 599,90 / R$ 569,91 PIX; 6x of R$ 99,98 from the installment tool).
+- Turn 4: the last line ("Para pagamentos, use só os canais oficiais...") is added by code because the message mentions PIX. Here it is redundant, since the customer only asked for the price.
+- "Giannini GN-15 Nylon Cedr Natural" is spelled this way in the catalog itself.

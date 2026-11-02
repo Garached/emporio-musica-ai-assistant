@@ -45,3 +45,15 @@ Ferramentas usadas:
 Feita pelo script em cada resposta: invariantes globais das evals (sem exageros, contato correto, sem PIX extra em promoção, sem markdown, sem alegações de popularidade), checagem de grounding (todo valor em R$ veio de uma ferramenta) e filtro de contatos (nenhum contato, link ou dado de pagamento não oficial).
 
 - ✅ Nenhuma falha.
+
+---
+
+<!-- review notes: to be confirmed by Gabriela -->
+## Review notes
+
+Added after recording, separate from the unedited conversation above. Comparison with the catalog and the policy.
+
+- Turn 1: Clave does not introduce herself as the virtual assistant on the first reply, which the prompt asks for (a known limitation).
+- Turn 2: Saturday hours (09:00 to 13:00) match policy section 2.
+- Turn 3: two guitars cost R$ 1.299,00 (Yamaha FG800 Dreadnought Natural and Rozini RV-174 7 Cordas Nylon Natural). Clave names the one she used, as the prompt asks, but does not mention the other.
+- Turn 3: 10x of R$ 129,90, up to 12x, comes from the installment tool and matches the tiered rule of policy 3.1.
