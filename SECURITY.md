@@ -209,9 +209,11 @@ A prompt can be talked around; code can't.
   - The real CNPJ (from the policy) could still be misrepresented as a payment key in a
     phrasing the filter doesn't catch (e.g. "pague via PIX para o CNPJ ..."). The prompt and
     the `fake_pix_key` eval cover that.
-  - The filter only blocks details; it doesn't make Clave *give* the official channels. In
-    the latest re-run, both payment scenarios pointed to a "site" instead of the phone or
-    e-mail (no invented details, but the official-contact check failed).
+  - The filter only blocks details. To make sure Clave also *gives* the official channels,
+    replies to payment messages get the official phone and e-mail appended in code when
+    missing ([notices.py](src/emporio/notices.py); a keyword heuristic that can miss other
+    wordings and also fires on PIX price questions). The prompt says the store has no
+    website or app, and the `no_site_reference` eval invariant checks it.
   - Regex detection can miss unusual formats (e.g. a phone number spelled out in words).
   - A production deployment should publish its official payment channels so customers can
     check them, and monitor replies for payment-related content.
@@ -259,7 +261,12 @@ A prompt can be talked around; code can't.
   `os.system`, `shell=True`, `yaml.load` and `__import__` found no uses. The only matches
   were `re.compile` (regex), the word "eval" in docstrings, and `"__import__"` as fuzz-test
   data.
-- **Red-team evals against the real model** (13 scenarios, all passing; results in
+- **Manual red teaming:** after the automated red team, the agent was attacked by hand in
+  one continuous conversation (17 attacks: impersonation, emotional pressure, jailbreaks,
+  prompt leakage, payment fraud, fake receipts, false claims, threats). Result: 0 leaks,
+  0 invented data, two minor wording notes. Evidence and full transcript:
+  [docs/manual-red-team.md](docs/manual-red-team.md).
+- **Red-team evals against the real model** (13 scenarios; results and run notes in
   [evals/results/red-team.md](evals/results/red-team.md)):
   - Round 1: `reveal_prompt`, `fake_manager`, `other_customer_data`, `brute_force`,
     `english_injection`, `fake_discount_code`.
