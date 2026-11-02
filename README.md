@@ -361,3 +361,45 @@ To regenerate: `python scripts/record_examples.py` (or `--only 04`). The script 
 - Real customer authentication (a one-time code to the registered phone) and server-side rate limiting per user and IP.
 - A lock file with pinned, hashed dependencies.
 - Create tickets for complaints and returns instead of only handing off to the store contact.
+
+## How I used AI in this project
+
+AI wrote almost all of the code in this project. **The decisions about how the system works, what it should do, and whether the result is correct were mine.** The AI did the implementation; I designed, reviewed and validated every step.
+
+**Tools**
+- **Claude (chat):** to plan each phase, discuss architecture decisions, write the prompts and analyze the results.
+- **Claude Code (in VS Code):** to implement each phase from those prompts.
+
+**How I worked (the same cycle in every phase)**
+1. **Plan and document** the phase before starting: context, a closed scope (e.g. *"only the data layer, no LLM calls"*) and what I expected as a result. All prompts are in [`docs/prompts/`](docs/prompts/), in order, including the follow-up fixes.
+2. **Review the prompt** before sending it.
+3. **Implement:** Claude Code works in small commits, always with tests.
+4. **Checkpoint:** I run `pytest`, read what was generated and compare it with what I expected. **I only move to the next phase when everything is checked.** Tests were not required by the challenge: I chose to run them at every phase so problems wouldn't pile up from one phase to the next.
+5. **Fix with a method:** when something fails, I find the cause (a wrong test? a tool? the prompt? the model?) and decide where to fix it.
+
+| What the AI did | What I did |
+|---|---|
+| Wrote most of the code and tests | Defined the architecture, the scope and the order of the phases |
+| Drafted documents such as `SECURITY.md` | Documented each phase before running it, so I always knew what I was starting and why |
+| Found data issues I hadn't seen | Interpreted the data and decided how to handle the contradictions in the store manual |
+| Ran the evaluations | Reviewed every result, read Clave's conversations, prioritized the failures and decided the fixes |
+
+**Where human review changed the outcome**
+- **A critical bug the tests missed.** With a 93% pass rate in the evals, I read the conversations and noticed Clave was promising "an extra 5% off with PIX" on items already on sale, which the store manual forbids. Neither the tests nor the coding assistant's review caught it. I fixed it in the tool and turned the case into a test.
+- **Disagreeing with the AI when needed.** The assistant suggested fixing the wrong phone number from the manual in the prompt. I fixed it at the source, in the code: if the tool returns the wrong number and the prompt says the right one, the model gets conflicting information.
+- **Finding the cause, not just the symptom.** A discontinued product showed up as "not found", and the agent offered an alternative 26 times more expensive. The problem wasn't the model: the tool was hiding the product.
+- **Not trusting tests just because they pass.** I found a security test that passed without checking anything. Fixing it revealed two more cases of the same kind.
+- **Tests caught my mistakes and the AI's.** One of my prompts said 64 products (there are 65), and the tests flagged it. Another time, the AI deleted 11 tests by accident, and the test count gave it away before anything was pushed.
+- **Handling the unexpected.** The model I first chose became unavailable during development, and the next one kept failing on the free tier. I diagnosed the errors (404 and 504) and switched models by changing one line, because the architecture already allowed it.
+- **Thinking like an attacker.** Payment scams are common in Brazil, so I tested fake PIX keys, fake payment links and fake receipts, and protected payment details in layers, in code. Then I attacked the agent myself, in one long conversation, with fake authority, emotional pressure, hidden requests and insistence: 17 attacks, no leaks.
+- **Knowing when to stop.** Every new run showed small wording variations. Once everything critical was protected in code, I froze the code and documented the rest as known limitations.
+
+**What I take from this project:** I'm not satisfied with asking the AI for something and accepting whatever comes back. I like to study the problem, understand each decision, and structure the work so that I lead the AI instead of being led by it. Running the tests at the end of every phase, even though the challenge didn't ask for it, saved me from bigger problems later and taught me that engineering maturity is in the process, not only in the result. To me, that's what being an AI Engineer means: using AI to build faster, without giving up on understanding, reviewing and owning what I deliver.
+
+## Language
+
+The README, the code, the commits and the technical docs are in English. Clave, the system prompt and the example conversations are in Portuguese, because the store's customers are Brazilian.
+
+---
+
+Built by [Gabriela Rached](https://github.com/Garached)
