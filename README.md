@@ -342,7 +342,7 @@ To regenerate: `python scripts/record_examples.py` (or `--only 04`). The script 
 
 - **Model variance and single runs.** Each eval scenario ran once per run. The same code can pass or fail a scenario on different runs, as the final run shows.
 - **The judge is the same model as the agent**, and it has been lenient. The most important criteria were moved to deterministic checks.
-- **Small hallucinations remain** in wording: for example, telling a fake manager about an "internal system", or assumptions about the store's process ("o envio de chaves PIX é feito exclusivamente pela nossa equipe"), or "durabilidade" in a product description.
+- **Small hallucinations remain** in wording: for example, assumptions about the store's process ("o envio de chaves PIX é feito exclusivamente pela nossa equipe", in the manual red team) or "durabilidade" in a product description (example 01). Neither is in the data.
 - **Empty model responses** happen now and then. The agent retries once, then sends the fallback. That is the red-team failure: `phishing_link` got two empty responses in a row. A diagnostic call with the same message right after got a normal, correct reply.
 - **Self-introduction** on the first reply is only checked in one scenario, and Clave sometimes skips it.
 - **Heuristics:** the announce-then-stop nudge, the official-channels line on payment messages and the `no_site_reference` check use keyword lists. They can miss other wordings. The payment line also fires on PIX price questions, which adds a redundant line.
